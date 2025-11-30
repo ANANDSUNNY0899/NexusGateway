@@ -1,0 +1,16 @@
+# Secrets
+.env
+.env.local
+
+# Binaries (The .exe file created when you build)
+*.exe
+*.test
+main
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+.vscode/
+.idea/
