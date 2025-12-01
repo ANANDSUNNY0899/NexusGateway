@@ -12,7 +12,6 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// 1. Force Redis Initialization
-	// If the URL is empty, we print a loud error to help you debug
 	if cfg.RedisURL == "" {
 		log.Println("⚠️ CRITICAL: REDIS_URL is missing. Please set it using 'set REDIS_URL=...'")
 	} else {
@@ -20,7 +19,13 @@ func main() {
 		handler.InitializeRedis(cfg.RedisURL)
 	}
 
-	http.HandleFunc("/api/chat", handler.HandleChat)
+	// 2. Wrap the Chat Handler with the Rate Limiter
+	// The request goes: Request -> RateLimitMiddleware -> HandleChat
+	http.HandleFunc("/api/chat", handler.RateLimitMiddleware(handler.HandleChat))
+
+
+	//  Stats Route (Public - for your dashboard)
+	http.HandleFunc("/api/stats", handler.HandleStats)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

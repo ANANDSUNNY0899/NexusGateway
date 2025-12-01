@@ -6,9 +6,11 @@ import (
 )
 
 type Config struct {
-	OpenAIKey string
-	RedisURL  string
-	Port      string
+	OpenAIKey    string
+	RedisURL     string
+	PineconeKey  string // <--- You were missing this
+	PineconeHost string // <--- You were missing this
+	Port         string
 }
 
 func LoadConfig() *Config {
@@ -17,8 +19,11 @@ func LoadConfig() *Config {
 		log.Fatal("Error: OPENAI_API_KEY is not set")
 	}
 
-	// We verify if the variable is being read
 	redisURL := os.Getenv("REDIS_URL")
+	
+	// Get Pinecone variables
+	pineconeKey := os.Getenv("PINECONE_API_KEY")
+	pineconeHost := os.Getenv("PINECONE_HOST")
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -26,8 +31,10 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		OpenAIKey: apiKey,
-		RedisURL:  redisURL,
-		Port:      port,
+		OpenAIKey:    apiKey,
+		RedisURL:     redisURL,
+		PineconeKey:  pineconeKey,
+		PineconeHost: pineconeHost,
+		Port:         port,
 	}
 }

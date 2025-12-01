@@ -4,15 +4,12 @@ import (
 	"NexusGateway/config"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/sha256" // <--- Added
+	"encoding/hex"    // <--- Added
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
-	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 type ChatRequest struct {
@@ -29,7 +26,7 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// GenerateHash creates a unique ID for the prompt
+// <--- RESTORED THIS FUNCTION
 func GenerateHash(input string) string {
 	hash := sha256.New()
 	hash.Write([]byte(input))
@@ -40,35 +37,54 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
 
-	// 1. Parse User Request
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// 2. CACHE CHECK: Generate Hash
-	promptHash := GenerateHash(userReq.Message)
-	
-	// Try to get from Redis
-	client := GetClient()
-	if client != nil {
-		val, err := client.Get(ctx, promptHash).Result()
+	// 1. Generate Embedding
+	log.Println("🧠 Generating Embedding...")
+	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
+	if err != nil {
+		log.Printf("Embedding Failed: %v", err)
+		http.Error(w, "Failed to generate embedding", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. SEMANTIC SEARCH (Pinecone)
+	if cfg.PineconeKey != "" {
+		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
 		if err == nil {
-			// CACHE HIT! Return the stored JSON directly
-			log.Println("⚡ CACHE HIT: Serving from Redis")
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("X-Cache", "HIT") // We add a custom header so you can see it in Postman
-			w.Write([]byte(val))
-			return
-		} else if err != redis.Nil {
-			log.Printf("Redis Error: %v", err)
+			log.Printf("🔍 Similarity Score: %.2f", score)
+			
+			// Threshold: 0.85 means "85% Similar"
+			if score > 0.70 {
+				log.Println("⚡ SEMANTIC HIT: Serving from Pinecone")
+				
+				client := GetClient()
+				if client != nil {
+					client.Incr(ctx, "stats:cache_hits")
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Cache", "HIT-SEMANTIC")
+				w.Write([]byte(cachedAnswer))
+				return
+			}
+		} else {
+			log.Printf("Pinecone Search Error: %v", err)
 		}
 	}
 
 	// 3. CACHE MISS: Call OpenAI
 	log.Println("🐢 CACHE MISS: Calling OpenAI...")
 	
+	client := GetClient()
+	if client != nil {
+		client.Incr(ctx, "stats:cache_misses")
+	}
+
 	openAIPayload := OpenAIRequest{
 		Model: "gpt-3.5-turbo",
 		Messages: []Message{
@@ -83,11 +99,6 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		http.Error(w, "Failed to create request", http.StatusInternalServerError)
-		return
-	}
-
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cfg.OpenAIKey)
 
@@ -101,17 +112,17 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	body, _ := io.ReadAll(resp.Body)
 
-	// 4. Save to Redis (TTL: 24 Hours)
-	if client != nil && resp.StatusCode == 200 {
-		err := client.Set(ctx, promptHash, body, 24*time.Hour).Err()
+	// 4. Save Vector + Answer to Pinecone
+	if resp.StatusCode == 200 && cfg.PineconeKey != "" {
+		id := GenerateHash(userReq.Message)
+		err := SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, string(body))
 		if err != nil {
-			log.Printf("Failed to save to Redis: %v", err)
+			log.Printf("Failed to save to Pinecone: %v", err)
 		} else {
-			log.Println("💾 Saved response to Redis")
+			log.Println("💾 Saved Vector to Pinecone")
 		}
 	}
 
-	// 5. Return Response
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Cache", "MISS")
 	w.Write(body)
