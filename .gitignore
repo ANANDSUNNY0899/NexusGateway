@@ -1,16 +1,18 @@
-# Secrets
+# Ignore Environment Files (Where secrets usually live)
 .env
 .env.local
 
-# Binaries (The .exe file created when you build)
+# Ignore Build Files (Binaries)
 *.exe
-*.test
+*.dll
+*.so
+*.dylib
 main
+test
 
-# OS specific files
-.DS_Store
-Thumbs.db
-
-# IDE specific files
+# Ignore IDE Settings
 .vscode/
 .idea/
+
+# Ignore Dependency Folders (Go specific)
+vendor/
