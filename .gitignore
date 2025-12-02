@@ -16,3 +16,4 @@ test
 
 # Ignore Dependency Folders (Go specific)
 vendor/
+run.bat
