@@ -8,8 +8,9 @@ import (
 type Config struct {
 	OpenAIKey    string
 	RedisURL     string
-	PineconeKey  string // <--- You were missing this
-	PineconeHost string // <--- You were missing this
+	PineconeKey  string
+	PineconeHost string
+	DBUrl        string // <--- NEW
 	Port         string
 }
 
@@ -20,10 +21,14 @@ func LoadConfig() *Config {
 	}
 
 	redisURL := os.Getenv("REDIS_URL")
-	
-	// Get Pinecone variables
 	pineconeKey := os.Getenv("PINECONE_API_KEY")
 	pineconeHost := os.Getenv("PINECONE_HOST")
+
+	// NEW: Get Database URL
+	dbUrl := os.Getenv("DB_URL")
+	if dbUrl == "" {
+		log.Println("⚠️ Warning: DB_URL is not set. Auth will fail.")
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -35,6 +40,7 @@ func LoadConfig() *Config {
 		RedisURL:     redisURL,
 		PineconeKey:  pineconeKey,
 		PineconeHost: pineconeHost,
+		DBUrl:        dbUrl, // <--- NEW
 		Port:         port,
 	}
 }

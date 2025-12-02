@@ -3,7 +3,6 @@ package main
 import (
 	"NexusGateway/config"
 	"NexusGateway/handler"
-	"fmt"
 	"log"
 	"net/http"
 )
@@ -11,25 +10,27 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 
-	// 1. Force Redis Initialization
-	if cfg.RedisURL == "" {
-		log.Println("⚠️ CRITICAL: REDIS_URL is missing. Please set it using 'set REDIS_URL=...'")
-	} else {
-		log.Println("🔄 Attempting to connect to Redis...")
+	// 1. Initialize Redis
+	if cfg.RedisURL != "" {
 		handler.InitializeRedis(cfg.RedisURL)
 	}
 
-	// 2. Wrap the Chat Handler with the Rate Limiter
-	// The request goes: Request -> RateLimitMiddleware -> HandleChat
-	http.HandleFunc("/api/chat", handler.RateLimitMiddleware(handler.HandleChat))
+	// 2. NEW: Initialize Database
+	if cfg.DBUrl != "" {
+		handler.InitializeDB(cfg.DBUrl)
+	} else {
+		log.Println("⚠️ Skipping DB connection (DB_URL missing)")
+	}
 
-
-	//  Stats Route (Public - for your dashboard)
+	// 3. SECURE ROUTES
+	// Order: Request -> Auth -> RateLimit -> Chat Handler
+	protectedChat := handler.AuthMiddleware(handler.RateLimitMiddleware(handler.HandleChat))
+	
+	http.HandleFunc("/api/chat", protectedChat)
 	http.HandleFunc("/api/stats", handler.HandleStats)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Nexus Gateway is Online! Send POST requests to /api/chat")
+		http.ServeFile(w, r, "public/index.html")
 	})
 
 	log.Printf("🚀 Nexus Gateway running on port %s", cfg.Port)

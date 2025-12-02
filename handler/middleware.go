@@ -4,54 +4,67 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
-// RateLimitMiddleware checks if the IP has exceeded its limit
+// 1. AUTH MIDDLEWARE (The Bouncer)
+// It checks if the user has a valid API Key from our Database
+func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get the header: "Authorization: Bearer nk-test-..."
+		authHeader := r.Header.Get("Authorization")
+		
+		// Clean up the string to get just the key
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		token = strings.TrimSpace(token)
+
+		if token == "" {
+			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+			return
+		}
+
+		// Ask the Database: "Is this key real?"
+		isValid := ValidateAPIKey(token)
+		if !isValid {
+			http.Error(w, "Invalid API Key", http.StatusUnauthorized)
+			return
+		}
+
+		// If valid, let them pass
+		next(w, r)
+	}
+}
+
+// 2. RATE LIMIT MIDDLEWARE (The Traffic Cop)
 func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. Get User IP
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
-			// If we can't detect IP (sometimes happens on localhost), use the whole string
 			ip = r.RemoteAddr
 		}
 
-		// 2. Define key for Redis (e.g., "rate:127.0.0.1")
 		key := "rate:" + ip
-		limit := 5 // Max 5 requests per minute
+		limit := 10 // Increased limit for testing
 
 		client := GetClient()
-		
-		// If Redis is down, we usually allow traffic (Fail Open), or block it. 
-		// Here we skip logic if client is nil.
 		if client != nil {
-			// 3. Increment the counter for this IP
-			// Incr does two things:
-			// - If key doesn't exist, sets it to 1.
-			// - If key exists, adds 1.
 			count, err := client.Incr(ctx, key).Result()
 			if err != nil {
-				log.Printf("Rate limit error: %v", err)
-				// Allow request to proceed if Redis fails
 				next(w, r)
 				return
 			}
 
-			// 4. If this is the first request, set an expiration time (1 Minute)
 			if count == 1 {
 				client.Expire(ctx, key, 1*time.Minute)
 			}
 
-			// 5. Check if they exceeded the limit
 			if count > int64(limit) {
-				log.Printf("🚫 BLOCKED IP: %s (Request #%d)", ip, count)
-				http.Error(w, "429 - Too Many Requests. Slow down!", http.StatusTooManyRequests)
+				log.Printf("🚫 BLOCKED IP: %s", ip)
+				http.Error(w, "429 - Too Many Requests", http.StatusTooManyRequests)
 				return
 			}
 		}
-
-		// 6. Allow the request to proceed to the Chat Handler
 		next(w, r)
 	}
 }
