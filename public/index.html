@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Gateway Status</title>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .container { text-align: center; border: 1px solid #30363d; padding: 40px; border-radius: 12px; background: #161b22; width: 350px; }
+        h1 { color: #58a6ff; }
+        .value { font-size: 2rem; font-weight: bold; color: #3fb950; }
+        .label { color: #8b949e; font-size: 0.9rem; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Nexus Gateway</h1>
+        <p>AI Semantic Caching Layer</p>
+        <div style="margin-top: 20px;">
+            <div class="value" id="money">$0.00</div>
+            <div class="label">Estimated Cost Savings</div>
+        </div>
+        <div style="margin-top: 20px;">
+            <div class="value" style="color: #58a6ff;" id="hits">0</div>
+            <div class="label">Cache Hits</div>
+        </div>
+    </div>
+    <script>
+        async function fetchStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('hits').innerText = data.cache_hits;
+                // Simple math: 0.002 cents saved per hit
+                document.getElementById('money').innerText = "$" + (data.cache_hits * 0.002).toFixed(4);
+            } catch(e) {}
+        }
+        fetchStats();
+        setInterval(fetchStats, 3000);
+    </script>
+</body>
+</html>
