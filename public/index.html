@@ -3,38 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus Gateway Status</title>
+    <title>Nexus Gateway</title>
     <style>
-        body { background-color: #0d1117; color: #c9d1d9; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .container { text-align: center; border: 1px solid #30363d; padding: 40px; border-radius: 12px; background: #161b22; width: 350px; }
-        h1 { color: #58a6ff; }
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .container { text-align: center; border: 1px solid #30363d; padding: 40px; border-radius: 12px; background: #161b22; width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        h1 { color: #58a6ff; margin-bottom: 5px; }
+        p { color: #8b949e; font-size: 0.9rem; }
+        
+        .metric-box { margin: 20px 0; padding: 15px; background: #21262d; border-radius: 8px; border: 1px solid #30363d; }
         .value { font-size: 2rem; font-weight: bold; color: #3fb950; }
-        .label { color: #8b949e; font-size: 0.9rem; margin-top: 5px; }
+        .label { color: #8b949e; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* Registration Form */
+        .auth-box { margin-top: 30px; border-top: 1px solid #30363d; padding-top: 20px; }
+        input { background: #0d1117; border: 1px solid #30363d; color: white; padding: 10px; width: 70%; border-radius: 6px; outline: none; }
+        button { background: #238636; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #2ea043; }
+
+        .key-display { margin-top: 15px; padding: 10px; background: #30363d; color: #58a6ff; font-family: monospace; border-radius: 4px; display: none; word-break: break-all; }
     </style>
 </head>
 <body>
+
     <div class="container">
         <h1>Nexus Gateway</h1>
         <p>AI Semantic Caching Layer</p>
-        <div style="margin-top: 20px;">
+
+        <!-- Stats Section -->
+        <div class="metric-box">
             <div class="value" id="money">$0.00</div>
             <div class="label">Estimated Cost Savings</div>
         </div>
-        <div style="margin-top: 20px;">
-            <div class="value" style="color: #58a6ff;" id="hits">0</div>
-            <div class="label">Cache Hits</div>
+        
+        <div style="display: flex; gap: 10px;">
+            <div class="metric-box" style="flex: 1;">
+                <div class="value" style="color: #58a6ff; font-size: 1.5rem;" id="hits">0</div>
+                <div class="label">Hits</div>
+            </div>
+            <div class="metric-box" style="flex: 1;">
+                <div class="value" style="color: #d2a8ff; font-size: 1.5rem;" id="total">0</div>
+                <div class="label">Total</div>
+            </div>
+        </div>
+
+        <!-- Registration Section -->
+        <div class="auth-box">
+            <p style="margin-bottom: 10px;">Get your API Key</p>
+            <div style="display: flex; gap: 5px;">
+                <input type="email" id="email" placeholder="Enter your email" />
+                <button onclick="register()">Get Key</button>
+            </div>
+            <div id="result" class="key-display"></div>
         </div>
     </div>
+
     <script>
+        // 1. Fetch Stats
         async function fetchStats() {
             try {
                 const res = await fetch('/api/stats');
                 const data = await res.json();
-                document.getElementById('hits').innerText = data.cache_hits;
-                // Simple math: 0.002 cents saved per hit
-                document.getElementById('money').innerText = "$" + (data.cache_hits * 0.002).toFixed(4);
+                document.getElementById('hits').innerText = data.cache_hits || 0;
+                document.getElementById('total').innerText = data.total_requests || 0;
+                // $0.002 per hit assumption
+                const savings = (data.cache_hits * 0.002).toFixed(4);
+                document.getElementById('money').innerText = "$" + savings;
             } catch(e) {}
         }
+
+        // 2. Handle Registration
+        async function register() {
+            const email = document.getElementById('email').value;
+            const resultBox = document.getElementById('result');
+            
+            if (!email) { alert("Please enter email"); return; }
+
+            resultBox.style.display = 'block';
+            resultBox.innerText = "Generating...";
+
+            try {
+                const res = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    resultBox.innerText = data.api_key;
+                    resultBox.style.color = "#58a6ff";
+                } else {
+                    resultBox.innerText = "Error: " + (data || "Failed");
+                    resultBox.style.color = "#f85149";
+                }
+            } catch (err) {
+                resultBox.innerText = "Connection Error";
+            }
+        }
+
+        // Auto-refresh stats
         fetchStats();
         setInterval(fetchStats, 3000);
     </script>
