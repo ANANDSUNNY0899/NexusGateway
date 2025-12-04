@@ -33,7 +33,8 @@ func main() {
 		http.ServeFile(w, r, "public/index.html")
 	})
 
-	log.Printf("🚀 Nexus Gateway running on port %s", cfg.Port)
+	//log.Printf("🚀 Nexus Gateway running on port %s", cfg.Port)
+	log.Printf("🚀 Nexus Gateway V2 (Simple Mode) running on port %s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, nil); err != nil {
 		log.Fatal(err)
 	}

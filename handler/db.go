@@ -9,35 +9,33 @@ import (
 
 var db *pgx.Conn
 
-// InitializeDB connects to Supabase
 func InitializeDB(connString string) {
-	// 1. Parse the URL into a Config object
+	// 1. Parse Config
 	config, err := pgx.ParseConfig(connString)
 	if err != nil {
 		log.Fatalf("❌ Invalid DB URL: %v", err)
 	}
 
-	// 2. FORCE Simple Protocol (This fixes the 401/Prepared Statement error)
+	// 2. DISABLE ALL CACHING (The Fix)
+	config.StatementCacheCapacity = 0
+	config.DescriptionCacheCapacity = 0
 	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	// 3. Connect using this specific config
+	// 3. Connect
 	db, err = pgx.ConnectConfig(context.Background(), config)
 	if err != nil {
 		log.Fatalf("❌ Unable to connect to database: %v", err)
 	}
-	log.Println("✅ Connected to Supabase (Postgres)")
+	log.Println("✅ Connected to Supabase (Simple Mode)")
 }
 
-// ValidateAPIKey checks if the key exists in the 'users' table
 func ValidateAPIKey(apiKey string) bool {
 	if db == nil {
-		return false // Fail safe if DB is down
+		return false
 	}
-
 	var exists bool
-	// SQL Query: Is there a user with this api_key?
+	// Use QueryRow which works better with Simple Protocol
 	err := db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM users WHERE api_key=$1)", apiKey).Scan(&exists)
-	
 	if err != nil {
 		log.Printf("DB Error: %v", err)
 		return false
