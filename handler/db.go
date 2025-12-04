@@ -11,8 +11,17 @@ var db *pgx.Conn
 
 // InitializeDB connects to Supabase
 func InitializeDB(connString string) {
-	var err error
-	db, err = pgx.Connect(context.Background(), connString)
+	// 1. Parse the URL into a Config object
+	config, err := pgx.ParseConfig(connString)
+	if err != nil {
+		log.Fatalf("❌ Invalid DB URL: %v", err)
+	}
+
+	// 2. FORCE Simple Protocol (This fixes the 401/Prepared Statement error)
+	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+
+	// 3. Connect using this specific config
+	db, err = pgx.ConnectConfig(context.Background(), config)
 	if err != nil {
 		log.Fatalf("❌ Unable to connect to database: %v", err)
 	}
