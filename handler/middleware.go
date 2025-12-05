@@ -8,14 +8,11 @@ import (
 	"time"
 )
 
-// 1. AUTH MIDDLEWARE (The Bouncer)
-// It checks if the user has a valid API Key from our Database
+// 1. AUTH MIDDLEWARE (The Bouncer + The Accountant)
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get the header: "Authorization: Bearer nk-test-..."
+		// A. Get Key
 		authHeader := r.Header.Get("Authorization")
-		
-		// Clean up the string to get just the key
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		token = strings.TrimSpace(token)
 
@@ -24,19 +21,35 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Ask the Database: "Is this key real?"
-		isValid := ValidateAPIKey(token)
-		if !isValid {
+		// B. Validate Key
+		if !ValidateAPIKey(token) {
 			http.Error(w, "Invalid API Key", http.StatusUnauthorized)
 			return
 		}
 
-		// If valid, let them pass
+		// C. NEW: Check Quota (Do they have credits?)
+		allowed, err := CheckUserLimit(token)
+		if err != nil {
+			log.Printf("DB Error: %v", err)
+			http.Error(w, "Server Error", http.StatusInternalServerError)
+			return
+		}
+		
+		if !allowed {
+			// This is the money shot. When they see this, they pay.
+			http.Error(w, "402 - Quota Exceeded. Upgrade your plan.", http.StatusPaymentRequired)
+			return
+		}
+
+		// D. NEW: Increment Usage (Charge them 1 credit)
+		IncrementUsage(token)
+
+		// E. Pass
 		next(w, r)
 	}
 }
 
-// 2. RATE LIMIT MIDDLEWARE (The Traffic Cop)
+// 2. RATE LIMIT MIDDLEWARE (Speed Control)
 func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -45,7 +58,7 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		key := "rate:" + ip
-		limit := 10 // Increased limit for testing
+		limit := 10 // Max 10 requests per minute
 
 		client := GetClient()
 		if client != nil {
