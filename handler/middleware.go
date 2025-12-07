@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// 1. AUTH MIDDLEWARE (The Bouncer + The Accountant)
+// 1. AUTH MIDDLEWARE
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// A. Get Key
@@ -27,7 +27,15 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// C. NEW: Check Quota (Do they have credits?)
+		// <--- NEW FIX: EXEMPT CHECKOUT FROM QUOTA CHECK --->
+		// If they are trying to pay, let them through!
+		if r.URL.Path == "/api/checkout" {
+			next(w, r)
+			return
+		}
+		// <--- END FIX --->
+
+		// C. Check Quota (Do they have credits?)
 		allowed, err := CheckUserLimit(token)
 		if err != nil {
 			log.Printf("DB Error: %v", err)
@@ -36,12 +44,11 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		
 		if !allowed {
-			// This is the money shot. When they see this, they pay.
 			http.Error(w, "402 - Quota Exceeded. Upgrade your plan.", http.StatusPaymentRequired)
 			return
 		}
 
-		// D. NEW: Increment Usage (Charge them 1 credit)
+		// D. Increment Usage (Charge them 1 credit)
 		IncrementUsage(token)
 
 		// E. Pass
@@ -49,7 +56,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// 2. RATE LIMIT MIDDLEWARE (Speed Control)
+// 2. RATE LIMIT MIDDLEWARE
 func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -58,7 +65,7 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		key := "rate:" + ip
-		limit := 10 // Max 10 requests per minute
+		limit := 10 
 
 		client := GetClient()
 		if client != nil {

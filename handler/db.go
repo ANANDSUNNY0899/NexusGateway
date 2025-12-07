@@ -74,3 +74,21 @@ func IncrementUsage(apiKey string) {
 		}
 	}()
 }
+
+
+// UpgradeUser boosts the limit to 10,000
+func UpgradeUser(apiKey string) error {
+	if db == nil { return nil }
+
+	// Set limit to 10,000 AND reset their usage to 0 (Fresh start)
+	query := `UPDATE users SET request_limit = 10000, requests_used = 0 WHERE api_key=$1`
+	_, err := db.Exec(context.Background(), query, apiKey)
+	
+	if err != nil {
+		log.Printf("❌ Failed to upgrade user: %v", err)
+		return err
+	}
+	
+	log.Printf("🎉 User Upgraded: %s", apiKey)
+	return nil
+}

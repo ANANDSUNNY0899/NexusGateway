@@ -25,6 +25,7 @@ func main() {
 	// 3. PUBLIC ROUTES (No Key Needed)
 	// Anyone can register or see the homepage
 	http.HandleFunc("/api/register", handler.HandleRegister)
+	http.HandleFunc("/api/webhook", handler.HandleWebhook)
 	
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "public/index.html")
@@ -36,6 +37,9 @@ func main() {
 	
 	http.HandleFunc("/api/chat", protectedChat)
 	http.HandleFunc("/api/stats", handler.HandleStats)
+
+	protectedCheckout := handler.AuthMiddleware(handler.HandleCheckout) 
+	http.HandleFunc("/api/checkout", protectedCheckout)
 
 	// 5. Start Server
 	log.Printf("🚀 Nexus Gateway V2 (Simple Mode) running on port %s", cfg.Port)

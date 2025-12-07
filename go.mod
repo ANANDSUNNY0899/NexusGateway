@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/redis/go-redis/v9 v9.17.1
+	github.com/stripe/stripe-go/v76 v76.25.0
 )
 
 require (

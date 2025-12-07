@@ -6,12 +6,14 @@ import (
 )
 
 type Config struct {
-	OpenAIKey    string
-	RedisURL     string
-	PineconeKey  string
-	PineconeHost string
-	DBUrl        string // <--- NEW
-	Port         string
+	OpenAIKey       string
+	RedisURL        string
+	PineconeKey     string
+	PineconeHost    string
+	DBUrl           string
+	StripeSecretKey string // <--- ADDED THIS
+	Port            string
+	StripeWebhookSecret string
 }
 
 func LoadConfig() *Config {
@@ -23,9 +25,11 @@ func LoadConfig() *Config {
 	redisURL := os.Getenv("REDIS_URL")
 	pineconeKey := os.Getenv("PINECONE_API_KEY")
 	pineconeHost := os.Getenv("PINECONE_HOST")
-
-	// NEW: Get Database URL
 	dbUrl := os.Getenv("DB_URL")
+	
+	// NEW: Get Stripe Key
+	stripeKey := os.Getenv("STRIPE_SECRET_KEY")
+
 	if dbUrl == "" {
 		log.Println("⚠️ Warning: DB_URL is not set. Auth will fail.")
 	}
@@ -36,11 +40,13 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		OpenAIKey:    apiKey,
-		RedisURL:     redisURL,
-		PineconeKey:  pineconeKey,
-		PineconeHost: pineconeHost,
-		DBUrl:        dbUrl, // <--- NEW
-		Port:         port,
+		OpenAIKey:       apiKey,
+		RedisURL:        redisURL,
+		PineconeKey:     pineconeKey,
+		PineconeHost:    pineconeHost,
+		DBUrl:           dbUrl,
+		StripeSecretKey: stripeKey, // <--- ADDED THIS
+		Port:            port,
+		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}
 }
