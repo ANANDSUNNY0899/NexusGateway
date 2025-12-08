@@ -26,6 +26,13 @@ func main() {
 	// Anyone can register or see the homepage
 	http.HandleFunc("/api/register", handler.HandleRegister)
 	http.HandleFunc("/api/webhook", handler.HandleWebhook)
+
+	http.HandleFunc("/success", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "public/success.html")
+	})
+	http.HandleFunc("/cancel", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "public/cancel.html")
+	})
 	
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "public/index.html")
