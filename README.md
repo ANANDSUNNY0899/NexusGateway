@@ -1,90 +1,138 @@
-# NexusGateway
 
-**Nexus Gateway** is an intelligent AI Middleware designed to slash LLM costs by up to 90% and reduce latency by 100x. It uses **Semantic Caching** (Vector Database) to understand the *meaning* of user queries, not just the keywords.
+#  NexusGateway
 
-> **Status:** Production Ready (Redis + Pinecone + Rate Limiting)
+**The Intelligent, Semantic-Caching AI Infrastructure Layer.**
 
-##  Key Features
+> **Live Demo:** [https://nexusgateway.onrender.com](https://nexusgateway.onrender.com)  
+> **Status:**  Production Ready (Multi-Tenant SaaS)
 
-*   **Semantic Caching:** Uses **OpenAI Embeddings** & **Pinecone** to detect similar questions (e.g., "Tea recipe" = "How to make tea") and serves cached answers.
-*   **Zero-Latency Mode:** Serves cached responses in **<50ms**.
-*   **Bankruptcy Protection:** Built-in **Rate Limiting** (Token Bucket) to prevent API abuse and cost spikes.
-*   **Multi-Layer Storage:**
-    *   **L1:** Redis (Hot Cache for exact matches & stats).
-    *   **L2:** Pinecone (Vector Store for semantic matches).
-*   **Analytics Engine:** Tracks cache hits, misses, and estimated cost savings.
+---
 
-## Tech Stack
+## Overview
 
-*   **Core:** Go (Golang)
-*   **Vector DB:** Pinecone (Serverless)
-*   **Cache:** Redis (Upstash)
-*   **AI:** OpenAI (GPT-3.5 + text-embedding-3-small)
+**NexusGateway** is a high-performance middleware designed to optimize Large Language Model (LLM) applications. It solves the two biggest problems in AI development: **Latency** and **Cost**.
 
-## Project Structure
+Instead of sending every request blindly to OpenAI, NexusGateway uses **Vector Embeddings** to understand the *meaning* of a user's query. If a similar question has been asked before, it serves the answer instantly from the edge cache, bypassing the expensive AI call.
 
-```bash
-NexusGateway/
-├── config/         # Environment & Key Management
-├── handler/
-│   ├── chat.go       # Main Logic (Orchestrator)
-│   ├── embedding.go  # OpenAI Vector Generation
-│   ├── pinecone.go   # Vector Database Operations
-│   ├── redis.go      # Caching & Stats
-│   ├── middleware.go # Rate Limiting Security
-│   └── stats.go      # Analytics Endpoint
-├── main.go         # Server Entry Point
-└── go.mod          # Dependencies
-Getting Started
-Prerequisites
-Go 1.21+
-OpenAI API Key
-Pinecone API Key & Host URL
-Redis Connection String
-Installation
-Clone the repository:
-code
-Bash
-git clone https://github.com/YOUR_USERNAME/NexusGateway.git
-cd NexusGateway
-Set Environment Variables (Windows CMD):
-code
-Cmd
-set OPENAI_API_KEY=sk-...
-set REDIS_URL=rediss://default:pass@url:6379
-set PINECONE_API_KEY=pcsk_...
-set PINECONE_HOST=index-name.svc.pinecone.io
-set PORT=8080
-Run the Server:
-code
-Bash
-go run main.go
- API Usage
-1. Chat Completion (Smart Cache)
-POST /api/chat
-code
-JSON
-{
-  "message": "How do I optimize a SQL query?"
-}
-Response Headers:
-X-Cache: HIT-SEMANTIC (Served from Pinecone)
-X-Cache: MISS (Served from OpenAI)
-2. Analytics
-GET /api/stats
-code
-JSON
-{
-    "total_requests": "150",
-    "cache_hits": "45",
-    "cache_misses": "105",
-    "money_saved_est": "$0.20"
-}
-How Semantic Search Works
-User sends text: "How to fix a flat tire?"
-Gateway converts text to a 1536-dimensional vector.
-Queries Pinecone for similar vectors (Threshold > 0.70).
-If Found: Returns stored answer immediately.
-If New: Calls OpenAI, returns answer, and saves vector for future users.
+**It acts as a complete Micro-SaaS backend, handling Authentication, Rate Limiting, and Usage-Based Billing via Stripe.**
 
-Built by SUNNY ANAND
+---
+
+## Tech Stack & Architecture
+
+This project implements a modern, scalable, distributed system architecture:
+
+*   **Core Backend:** **Go (Golang)** — Chosen for high concurrency and low latency.
+*   **Hot Caching (L1):** **Redis (Upstash)** — Sub-millisecond exact-match caching and rate limiting.
+*   **Semantic Memory (L2):** **Pinecone** — Vector Database for AI semantic search (Cosine Similarity).
+*   **Database:** **PostgreSQL (Supabase)** — Relational storage for User Auth, Keys, and Usage Quotas.
+*   **Billing Engine:** **Stripe** — Full checkout flow and Webhook handling for automated upgrades.
+*   **AI Engine:** **OpenAI** — GPT-3.5/4 integration with Embedding generation.
+*   **Infrastructure:** **Render** — Dockerized cloud deployment.
+
+---
+
+## Key Features
+
+### 1. Smart Semantic Caching
+Unlike traditional caches that only match exact strings, NexusGateway understands intent.
+*   *Query A:* "How do I make tea?"
+*   *Query B:* "Recipe for tea"
+*   **Result:** Nexus detects these are 95% similar and serves the cached answer to Query B instantly. **Cost: $0. Latency: <50ms.**
+
+###  2. Rate Limiting & Security
+*   **Token Bucket Algorithm:** Prevents API abuse (Redis-backed).
+*   **Auth Middleware:** Custom Bearer Token authentication.
+*   **Usage Tracking:** Tracks every request in Postgres. Automatically blocks users who exceed their free tier (100 requests).
+
+###  3. Automated SaaS Billing
+*   **Integrated Stripe Checkout:** Users can upgrade plans seamlessly.
+*   **Webhook Listener:** Listens for `checkout.session.completed` events to automatically unlock account limits in the database.
+*   **Zero-Touch Ops:** No manual database updates required.
+
+###  4. Real-Time Analytics Dashboard
+*   A Cyberpunk-styled frontend showing live stats:
+    *   Total Requests.
+    *   Cache Hits vs. Misses.
+    *   **Real-time $$ Saved calculator.**
+
+---
+
+##  API Documentation
+
+### **1. Register User**
+Get a unique API Key to start using the gateway.
+*   **Endpoint:** `POST /api/register`
+*   **Body:** `{ "email": "user@example.com" }`
+*   **Response:** `{ "api_key": "nk-8f7a..." }`
+
+### **2. Chat with AI (The Core)**
+Send your prompt to the gateway.
+*   **Endpoint:** `POST /api/chat`
+*   **Headers:** `Authorization: Bearer <YOUR_API_KEY>`
+*   **Body:** `{ "message": "What is the capital of France?" }`
+*   **Response Headers:**
+    *   `X-Cache: HIT-SEMANTIC` (If served from Vector DB)
+    *   `X-Cache: MISS` (If generated by OpenAI)
+
+### **3. Upgrade Plan (Stripe)**
+Get a payment link to unlock higher limits.
+*   **Endpoint:** `POST /api/checkout`
+*   **Headers:** `Authorization: Bearer <YOUR_API_KEY>`
+*   **Response:** `{ "checkout_url": "https://checkout.stripe.com/..." }`
+
+---
+
+##  Local Development Setup
+
+1.  **Clone the Repo**
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/NexusGateway.git
+    cd NexusGateway
+    ```
+
+2.  **Install Dependencies**
+    ```bash
+    go mod tidy
+    ```
+
+3.  **Configure Environment**
+    Create a `run.bat` (Windows) or `.env` file with your keys:
+    ```bash
+    set OPENAI_API_KEY=sk-...
+    set REDIS_URL=rediss://default:...
+    set PINECONE_API_KEY=pcsk_...
+    set PINECONE_HOST=index-name.svc.pinecone.io
+    set DB_URL=postgresql://postgres:...@pooler.supabase.com:6543/postgres
+    set STRIPE_SECRET_KEY=sk_test_...
+    set STRIPE_WEBHOOK_SECRET=whsec_...
+    ```
+
+4.  **Run the Server**
+    ```bash
+    run.bat
+    # OR
+    go run main.go
+    ```
+
+---
+
+##  System Design Flow
+
+1.  **Incoming Request** → **Middleware** (Check Auth & Rate Limit).
+2.  **Quota Check** → Query **Supabase**: "Does user have credits?"
+    *   *If No:* Return `402 Payment Required`.
+3.  **Cache Check** → Query **Pinecone**: "Do we have a vector match > 85% similarity?"
+    *   *If Yes:* Return cached JSON immediately.
+4.  **LLM Call** → If no cache, forward to **OpenAI**.
+5.  **Write Back** → Save the new answer and vector to **Pinecone** for future users.
+6.  **Billing** → Async increment user usage count in **Supabase**.
+
+---
+
+##  Credits
+
+Built by **SUNNY ANAND**.
+*   *Engineered with Go, fueled by coffee.* 
+
+---
