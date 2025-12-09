@@ -88,3 +88,26 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
+
+
+
+
+// CORSMiddleware allows other websites (like your Frontend) to talk to this API
+func CORSMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// 1. Allow any origin (You can restrict this to your domain later)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		
+		// 2. Allow specific methods and headers
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+
+		// 3. Handle "Preflight" requests (Browsers ask "Can I?" before doing it)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next(w, r)
+	}
+}

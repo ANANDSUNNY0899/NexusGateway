@@ -24,7 +24,7 @@ func main() {
 
 	// 3. PUBLIC ROUTES (No Key Needed)
 	// Anyone can register or see the homepage
-	http.HandleFunc("/api/register", handler.HandleRegister)
+	http.HandleFunc("/api/register", handler.CORSMiddleware(handler.HandleRegister))
 	http.HandleFunc("/api/webhook", handler.HandleWebhook)
 
 	http.HandleFunc("/success", func(w http.ResponseWriter, r *http.Request) {
@@ -42,11 +42,11 @@ func main() {
 	// Order: Request -> Auth -> RateLimit -> Chat Handler
 	protectedChat := handler.AuthMiddleware(handler.RateLimitMiddleware(handler.HandleChat))
 	
-	http.HandleFunc("/api/chat", protectedChat)
-	http.HandleFunc("/api/stats", handler.HandleStats)
+	http.HandleFunc("/api/chat", handler.CORSMiddleware(protectedChat))
+	http.HandleFunc("/api/stats", handler.CORSMiddleware(handler.HandleStats))
 
-	protectedCheckout := handler.AuthMiddleware(handler.HandleCheckout) 
-	http.HandleFunc("/api/checkout", protectedCheckout)
+    protectedCheckout := handler.AuthMiddleware(handler.HandleCheckout)
+	http.HandleFunc("/api/checkout", handler.CORSMiddleware(protectedCheckout))
 
 	// 5. Start Server
 	log.Printf("🚀 Nexus Gateway V2 (Simple Mode) running on port %s", cfg.Port)
