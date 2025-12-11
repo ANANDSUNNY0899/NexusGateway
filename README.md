@@ -60,6 +60,7 @@ graph TD
     LLM --> Go
     Go -->|6. Cache Result| Pine
     Go --> User
+```
 <br/>
 
 ## Getting Started
