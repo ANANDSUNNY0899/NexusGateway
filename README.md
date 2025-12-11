@@ -140,11 +140,9 @@ Built by **SUNNY ANAND**.
 
 
 
-
-
 <div align="center">
 
-# ⚡ Nexus Gateway
+#  Nexus Gateway
 ### High-Performance AI Semantic Caching & Monetization Layer
 
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
@@ -202,47 +200,45 @@ graph TD
     LLM --> Go
     Go -->|6. Cache Result| Pine
     Go --> User
-
-
+``` 
 
 ## Getting Started
+
 Prerequisites
     * Go 1.21+
     * Redis Instance (Upstash/Local)
     * PostgreSQL (Supabase/Local)
     * API Keys (OpenAI, Pinecone, Stripe)
-#Installation
- 1. Clone the Repo
+Installation
+1. Clone the Repo
 code
 Bash
-    git clone https://github.com/ANANDSUNNY0899/NexusGateway.git
-    cd NexusGateway
+git clone https://github.com/ANANDSUNNY0899/NexusGateway.git
+cd NexusGateway
 2. Setup Environment
 Create a .env file or set variables:
 code
 Bash
-    export OPENAI_API_KEY="sk-..."
-    export REDIS_URL="rediss://..."
-    export PINECONE_API_KEY="pcsk_..."
-    export DB_URL="postgresql://..."
-    export STRIPE_SECRET_KEY="sk_test_..."
-Run the Server
+export OPENAI_API_KEY="sk-..."
+export REDIS_URL="rediss://..."
+export PINECONE_API_KEY="pcsk_..."
+export DB_URL="postgresql://..."
+export STRIPE_SECRET_KEY="sk_test_..."
+3. Run the Server
 code
 Bash
 go run main.go
+# API Endpoints
+Method	Endpoint	Description	Auth Required
+POST	/api/register	Create a new user & get API Key	❌ No
+POST	/api/chat	Send prompt to AI (Cached)	✅ Yes
+POST	/api/checkout	Generate Stripe Payment Link	✅ Yes
+GET	/api/stats	View global savings stats	❌ No
+# Future Roadmap
 
-## API Endpoints
-    Method	Endpoint	Description	Auth Required
-    POST	/api/register	Create a new user & get API Key	❌ No
-    POST	/api/chat	Send prompt to AI (Cached)	✅ Yes
-    POST	/api/checkout	Generate Stripe Payment Link	✅ Yes
-    GET	/api/stats	View global savings stats	❌ No
-## Future Roadmap
+Multi-Model Support: Route to Anthropic/Claude and Google Gemini.
 
-    Multi-Model Support: Route to Anthropic/Claude and Google Gemini.
+Dashboard V2: Visual charts for usage history.
 
-    Dashboard V2: Visual charts for usage history.
-
-    SDK: Python and Node.js wrappers for easier integration.
-
-# Built with ❤️ by Sunny Anand
+SDK: Python and Node.js wrappers for easier integration.
+Built with ❤️ by Sunny Anand
