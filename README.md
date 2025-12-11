@@ -85,15 +85,15 @@ Prerequisites</br>
 3. Run the Server:</br></br>
      go run main.go</br>
 <br/>
-## API Endpoints</br>
- * Method	Endpoint	Description	Auth Required</br>
- * POST	/api/register	Create a new user & get API Key	❌ No</br>
- * POST	/api/chat	Send prompt to AI (Cached)	✅ Yes</br>
- * POST	/api/checkout	Generate Stripe Payment Link	✅ Yes</br>
- * GET	/api/stats	View global savings stats	❌ No</br>
+# API Endpoints</br>
+    * Method	Endpoint	Description	Auth Required</br>
+    * POST	/api/register	Create a new user & get API Key	❌ No</br>
+    * POST	/api/chat	Send prompt to AI (Cached)	✅ Yes</br>
+    * POST	/api/checkout	Generate Stripe Payment Link	✅ Yes</br>
+    * GET	/api/stats	View global savings stats	❌ No</br>
  </br>
 # Future Roadmap</br>
-* Multi-Model Support: Route to Anthropic/Claude and Google Gemini.</br>
-* Dashboard V2: Visual charts for usage history.</br>
-* SDK: Python and Node.js wrappers for easier integration.</br>
-## Built with ❤️ by Sunny Anand</br>
+    * Multi-Model Support: Route to Anthropic/Claude and Google Gemini.</br>
+    * Dashboard V2: Visual charts for usage history.</br>
+    * SDK: Python and Node.js wrappers for easier integration.</br>
+# Built with ❤️ by Sunny Anand</br>
