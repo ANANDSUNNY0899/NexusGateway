@@ -204,3 +204,45 @@ graph TD
     Go --> User
 
 
+
+## Getting Started
+Prerequisites
+    * Go 1.21+
+    * Redis Instance (Upstash/Local)
+    * PostgreSQL (Supabase/Local)
+    * API Keys (OpenAI, Pinecone, Stripe)
+#Installation
+ 1. Clone the Repo
+code
+Bash
+    git clone https://github.com/ANANDSUNNY0899/NexusGateway.git
+    cd NexusGateway
+2. Setup Environment
+Create a .env file or set variables:
+code
+Bash
+    export OPENAI_API_KEY="sk-..."
+    export REDIS_URL="rediss://..."
+    export PINECONE_API_KEY="pcsk_..."
+    export DB_URL="postgresql://..."
+    export STRIPE_SECRET_KEY="sk_test_..."
+Run the Server
+code
+Bash
+go run main.go
+
+## API Endpoints
+    Method	Endpoint	Description	Auth Required
+    POST	/api/register	Create a new user & get API Key	❌ No
+    POST	/api/chat	Send prompt to AI (Cached)	✅ Yes
+    POST	/api/checkout	Generate Stripe Payment Link	✅ Yes
+    GET	/api/stats	View global savings stats	❌ No
+## Future Roadmap
+
+    Multi-Model Support: Route to Anthropic/Claude and Google Gemini.
+
+    Dashboard V2: Visual charts for usage history.
+
+    SDK: Python and Node.js wrappers for easier integration.
+
+# Built with ❤️ by Sunny Anand
