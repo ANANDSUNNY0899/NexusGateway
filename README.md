@@ -63,37 +63,37 @@ graph TD
 ```
 <br/>
 
-## Getting Started
-Prerequisites
-    Go 1.21+
-    Redis Instance (Upstash/Local)
-    PostgreSQL (Supabase/Local)
-    API Keys (OpenAI, Pinecone, Stripe)
+## Getting Started</br>
+Prerequisites</br>
+ * Go 1.21+</br>
+ * Redis Instance (Upstash/Local)</br>
+ * PostgreSQL (Supabase/Local)</br>
+ * API Keys (OpenAI, Pinecone, Stripe)</br>
 <br/>
-## Installation
-1. Clone the Repo
-    git clone https://github.com/ANANDSUNNY0899/NexusGateway.git
-    cd NexusGateway
-2. Setup Environment
-   Create a .env file or set variables in your terminal:
-    export OPENAI_API_KEY="sk-..."
-    export REDIS_URL="rediss://..."
-    export PINECONE_API_KEY="pcsk_..."
-    export PINECONE_HOST="index-name.svc.pinecone.io"
-    export DB_URL="postgresql://..."
+## Installation</br>
+1. Clone the Repo</br>
+    git clone https://github.com/ANANDSUNNY0899/NexusGateway.git</br>
+    cd NexusGateway</br>
+2. Setup Environment</br>
+   Create a .env file or set variables in your terminal:</br>
+    export OPENAI_API_KEY="sk-..."</br>
+    export REDIS_URL="rediss://..."</br>
+    export PINECONE_API_KEY="pcsk_..."</br>
+    export PINECONE_HOST="index-name.svc.pinecone.io"</br>
+    export DB_URL="postgresql://..."</br>
     export STRIPE_SECRET_KEY="sk_test_..."</br>
-3. Run the Server:</br>
-     go run main.go
+3. Run the Server:</br></br>
+     go run main.go</br>
 <br/>
-## API Endpoints
- * Method	Endpoint	Description	Auth Required
- * POST	/api/register	Create a new user & get API Key	❌ No
- * POST	/api/chat	Send prompt to AI (Cached)	✅ Yes
- * POST	/api/checkout	Generate Stripe Payment Link	✅ Yes
- * GET	/api/stats	View global savings stats	❌ No
+## API Endpoints</br>
+ * Method	Endpoint	Description	Auth Required</br>
+ * POST	/api/register	Create a new user & get API Key	❌ No</br>
+ * POST	/api/chat	Send prompt to AI (Cached)	✅ Yes</br>
+ * POST	/api/checkout	Generate Stripe Payment Link	✅ Yes</br>
+ * GET	/api/stats	View global savings stats	❌ No</br>
  </br>
-# Future Roadmap
-* Multi-Model Support: Route to Anthropic/Claude and Google Gemini.
-* Dashboard V2: Visual charts for usage history.
-* SDK: Python and Node.js wrappers for easier integration.
-## Built with ❤️ by Sunny Anand
+# Future Roadmap</br>
+* Multi-Model Support: Route to Anthropic/Claude and Google Gemini.</br>
+* Dashboard V2: Visual charts for usage history.</br>
+* SDK: Python and Node.js wrappers for easier integration.</br>
+## Built with ❤️ by Sunny Anand</br>
