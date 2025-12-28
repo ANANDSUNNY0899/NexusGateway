@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
+	
 )
 
 type RegisterRequest struct {
