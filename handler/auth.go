@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type RegisterRequest struct {
@@ -14,6 +15,7 @@ type RegisterRequest struct {
 type RegisterResponse struct {
 	Email  string `json:"email"`
 	APIKey string `json:"api_key"`
+	Status string `json:"status"` // "created" or "found"
 }
 
 func HandleRegister(w http.ResponseWriter, r *http.Request) {
@@ -35,31 +37,52 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Generate a new Secure Key
-	newKey, err := GenerateAPIKey()
-	if err != nil {
-		http.Error(w, "Server Error", http.StatusInternalServerError)
+	// Safety check
+	if db == nil {
+		http.Error(w, "Database not connected", http.StatusServiceUnavailable)
 		return
 	}
 
-	// 4. Save to Supabase
-	// We use QueryRow to ensure we catch duplicate email errors
-	var userID string
-	query := `INSERT INTO users (email, api_key) VALUES ($1, $2) RETURNING id`
-	
-	err = db.QueryRow(context.Background(), query, req.Email, newKey).Scan(&userID)
-	if err != nil {
-		log.Printf("Registration Error: %v", err)
-		http.Error(w, "User already exists or DB error", http.StatusConflict)
-		return
+	var apiKey string
+	var status string
+
+	// 3. CHECK IF USER EXISTS
+	// We try to find their key first
+	err := db.QueryRow(context.Background(), "SELECT api_key FROM users WHERE email=$1", req.Email).Scan(&apiKey)
+
+	if err == nil {
+		// --- SCENARIO A: USER EXISTS ---
+		// We found a key! Return it.
+		log.Printf("👤 Existing User Logged In: %s", req.Email)
+		status = "found"
+
+	} else {
+		// --- SCENARIO B: NEW USER ---
+		// No key found, so we create one.
+		
+		newKey, _ := GenerateAPIKey()
+		
+		// Insert into DB
+		var userID string
+		insertQuery := `INSERT INTO users (email, api_key) VALUES ($1, $2) RETURNING id`
+		err = db.QueryRow(context.Background(), insertQuery, req.Email, newKey).Scan(&userID)
+		
+		if err != nil {
+			log.Printf("Registration Error: %v", err)
+			http.Error(w, "Database Error", http.StatusInternalServerError)
+			return
+		}
+
+		apiKey = newKey
+		status = "created"
+		log.Printf("👤 New User Registered: %s", req.Email)
 	}
 
-	log.Printf("👤 New User Registered: %s", req.Email)
-
-	// 5. Return the Key to the User
+	// 4. Return the Key (Whether new or old)
 	resp := RegisterResponse{
 		Email:  req.Email,
-		APIKey: newKey,
+		APIKey: apiKey,
+		Status: status,
 	}
 	
 	w.Header().Set("Content-Type", "application/json")
