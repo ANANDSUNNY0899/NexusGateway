@@ -2,31 +2,45 @@ package handler
 
 import (
 	"NexusGateway/config"
-	"bytes"
 	"context"
-	"crypto/sha256" // <--- Added
-	"encoding/hex"    // <--- Added
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
-	"io"
 	"log"
 	"net/http"
+	"strings" // Added strings package
 )
 
+// Request Structure
 type ChatRequest struct {
 	Message string `json:"message"`
+	Model   string `json:"model"`
 }
 
-type OpenAIRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
+// Helper: Extract Key from Header
+// func getAPIKey(r *http.Request) string {
+// 	authHeader := r.Header.Get("Authorization")
+// 	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+// }
+
+
+// Helper: Extract Key from Header safely
+func getAPIKey(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	// If empty, return empty string (don't crash)
+	if authHeader == "" {
+		return ""
+	}
+	// Split by space ("Bearer", "KEY") and take the second part
+	parts := strings.Split(authHeader, " ")
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
 }
 
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
 
-// <--- RESTORED THIS FUNCTION
+
 func GenerateHash(input string) string {
 	hash := sha256.New()
 	hash.Write([]byte(input))
@@ -36,94 +50,91 @@ func GenerateHash(input string) string {
 func HandleChat(w http.ResponseWriter, r *http.Request) {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
+	userKey := getAPIKey(r) // Get the key for logging
 
+	// 1. Parse Request
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// 1. Generate Embedding
+	if userReq.Model == "" {
+		userReq.Model = "gpt-3.5-turbo"
+	}
+
+	// 2. Generate Embedding
 	log.Println("🧠 Generating Embedding...")
 	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
 	if err != nil {
-		log.Printf("Embedding Failed: %v", err)
-		http.Error(w, "Failed to generate embedding", http.StatusInternalServerError)
-		return
+		log.Printf("Embedding Warning: %v", err)
 	}
 
-	// 2. SEMANTIC SEARCH (Pinecone)
-	if cfg.PineconeKey != "" {
+	// 3. SEMANTIC SEARCH (Cache Hit)
+	if vector != nil && cfg.PineconeKey != "" {
 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
 		if err == nil {
 			log.Printf("🔍 Similarity Score: %.2f", score)
 			
-			// Threshold: 0.85 means "85% Similar"
-			if score > 0.70 {
+			if score > 0.85 {
 				log.Println("⚡ SEMANTIC HIT: Serving from Pinecone")
 				
 				client := GetClient()
-				if client != nil {
-					client.Incr(ctx, "stats:cache_hits")
-				}
+				if client != nil { client.Incr(ctx, "stats:cache_hits") }
+
+				// --- LOGGING (HIT) ---
+				LogRequest(userKey, userReq.Model, 200, true)
+				// ---------------------
 
 				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("X-Cache", "HIT-SEMANTIC")
-				w.Write([]byte(cachedAnswer))
+				json.NewEncoder(w).Encode(map[string]any{
+					"choices": []map[string]any{
+						{ "message": map[string]string{ "content": cachedAnswer } },
+					},
+				})
 				return
 			}
-		} else {
-			log.Printf("Pinecone Search Error: %v", err)
 		}
 	}
 
-	// 3. CACHE MISS: Call OpenAI
-	log.Println("🐢 CACHE MISS: Calling OpenAI...")
+	// 4. ROUTER (Cache Miss)
+	log.Printf("🐢 CACHE MISS: Routing request to %s...", userReq.Model)
 	
 	client := GetClient()
-	if client != nil {
-		client.Incr(ctx, "stats:cache_misses")
-	}
+	if client != nil { client.Incr(ctx, "stats:cache_misses") }
 
-	openAIPayload := OpenAIRequest{
-		Model: "gpt-3.5-turbo",
-		Messages: []Message{
-			{Role: "user", Content: userReq.Message},
-		},
-	}
-
-	payloadBytes, err := json.Marshal(openAIPayload)
+	provider, err := GetProvider(userReq.Model, cfg.OpenAIKey, cfg.AnthropicKey)
 	if err != nil {
-		http.Error(w, "Error processing payload", http.StatusInternalServerError)
+		http.Error(w, "Invalid Model", http.StatusBadRequest)
 		return
 	}
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(payloadBytes))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cfg.OpenAIKey)
-
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
+	responseText, err := provider.Send(userReq.Message)
 	if err != nil {
-		http.Error(w, "Failed to contact OpenAI", http.StatusBadGateway)
+		log.Printf("Provider Error: %v", err)
+		
+		// --- LOGGING (ERROR) ---
+		LogRequest(userKey, userReq.Model, 500, false)
+		// -----------------------
+
+		http.Error(w, "AI Provider Error: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-
-	// 4. Save Vector + Answer to Pinecone
-	if resp.StatusCode == 200 && cfg.PineconeKey != "" {
+	// 5. Save to Pinecone
+	if vector != nil && cfg.PineconeKey != "" {
 		id := GenerateHash(userReq.Message)
-		err := SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, string(body))
-		if err != nil {
-			log.Printf("Failed to save to Pinecone: %v", err)
-		} else {
-			log.Println("💾 Saved Vector to Pinecone")
-		}
+		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, responseText)
 	}
+
+	// --- LOGGING (MISS / SUCCESS) ---
+	LogRequest(userKey, userReq.Model, 200, false)
+	// --------------------------------
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Cache", "MISS")
-	w.Write(body)
+	json.NewEncoder(w).Encode(map[string]any{
+		"choices": []map[string]any{
+			{ "message": map[string]string{ "content": responseText } },
+		},
+	})
 }

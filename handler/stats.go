@@ -1,49 +1,60 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	
 )
 
 type StatsResponse struct {
-	TotalRequests string `json:"total_requests"`
-	CacheHits     string `json:"cache_hits"`
-	CacheMisses   string `json:"cache_misses"`
-	MoneySaved    string `json:"money_saved_est"` // Estimated
+	TotalRequests int64       `json:"total_requests"`
+	CacheHits     int64       `json:"cache_hits"`
+	GraphData     []GraphPoint `json:"graph_data"` // <--- NEW
+}
+
+type GraphPoint struct {
+	Time  string `json:"time"`
+	Count int    `json:"count"`
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed. Use GET.", http.StatusMethodNotAllowed)
-		return
+	// 1. Get Counters from Redis (Fast)
+	client := GetClient()
+	var total, hits int64
+	if client != nil {
+		total, _ = client.Get(ctx, "stats:total_requests").Int64()
+		hits, _ = client.Get(ctx, "stats:cache_hits").Int64()
 	}
 
-	// ... rest of the code is the same ...
-	client := GetClient()
-
-
+	// 2. Get Graph Data from Postgres (Slow but detailed)
+	// We aggregate requests by hour for the last 24 hours
+	graphData := []GraphPoint{}
 	
-	// client := GetClient()
-	// if client == nil {
-	// 	http.Error(w, "Redis not connected", http.StatusServiceUnavailable)
-	// 	return
-	// }
+	if db != nil {
+		query := `
+			SELECT to_char(created_at, 'HH24:00') as time, COUNT(*) as count
+			FROM request_logs
+			WHERE created_at > NOW() - INTERVAL '24 hours'
+			GROUP BY time
+			ORDER BY time ASC;
+		`
+		rows, err := db.Query(context.Background(), query)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var p GraphPoint
+				rows.Scan(&p.Time, &p.Count)
+				graphData = append(graphData, p)
+			}
+		}
+	}
 
-	// Fetch counters from Redis
-	total, _ := client.Get(ctx, "stats:total_requests").Result()
-	hits, _ := client.Get(ctx, "stats:cache_hits").Result()
-	misses, _ := client.Get(ctx, "stats:cache_misses").Result()
-
-	// Basic calculation: Assume each hit saves $0.001 (approx cost of a small GPT query)
-	// You can make this math more complex later
-	// Note: Redis returns strings, for now we just send them as is.
-	
+	// 3. Return JSON
 	resp := StatsResponse{
 		TotalRequests: total,
 		CacheHits:     hits,
-		CacheMisses:   misses,
-		MoneySaved:    "$0.00", // You can calculate this in frontend or convert string->float here
+		GraphData:     graphData,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
