@@ -63,45 +63,59 @@ graph TD
 ```
 <br/>
 
-## Getting Started
+# Getting Started
 Prerequisites
 Go 1.21+
 Redis Instance (Upstash/Local)
 PostgreSQL (Supabase/Local)
 API Keys (OpenAI, Pinecone, Stripe)
-<br/>
-Installation
+
+## Installation
 1. Clone the Repo
-code
-Bash
+
+```Bash
 git clone https://github.com/ANANDSUNNY0899/NexusGateway.git
 cd NexusGateway
-2. Setup Environment
-Create a .env file or set variables in your terminal:
-code
-Bash
-export OPENAI_API_KEY="sk-..."
-export REDIS_URL="rediss://..."
-export PINECONE_API_KEY="pcsk_..."
-export PINECONE_HOST="index-name.svc.pinecone.io"
-export DB_URL="postgresql://..."
-export STRIPE_SECRET_KEY="sk_test_..."
-3. Run the Server
-code
-Bash
-go run main.go
-<br/>
-🔌 API Endpoints
-Method	Endpoint	Description	Auth Required
-POST	/api/register	Create a new user & get API Key	❌ No
-POST	/api/chat	Send prompt to AI (Cached)	✅ Yes
-POST	/api/checkout	Generate Stripe Payment Link	✅ Yes
-GET	/api/stats	View global savings stats	❌ No
-🔮 Future Roadmap
+```
+#  You can install the official client via pip:
 
-Multi-Model Support: Route to Anthropic/Claude and Google Gemini.
+```Bash
+pip install nexus-gateway
+```
+# Setup Environment
+    ## Create a .env file or set variables in your terminal:
 
-Dashboard V2: Visual charts for usage history.
+    export OPENAI_API_KEY="sk-..."
+    export REDIS_URL="rediss://..."
+    export PINECONE_API_KEY="pcsk_..."
+    export PINECONE_HOST="index-name.svc.pinecone.io"
+    export DB_URL="postgresql://..."
+    export STRIPE_SECRET_KEY="sk_test_..."
 
-SDK: Python and Node.js wrappers for easier integration.
-Built with ❤️ by Sunny Anand
+```
+3. Run the Server: go run main.go
+```
+
+4. API Endpoints
+    * Method	Endpoint	Description	Auth Required
+    * POST	/api/register	Create a new user & get API Key	❌ No
+    * POST	/api/chat	Send prompt to AI (Cached)	✅ Yes
+    * POST	/api/checkout	Generate Stripe Payment Link	✅ Yes
+    * GET	/api/stats	View global savings stats	❌ No
+
+##  Completed Roadmap
+
+- [x] **Multi-Model Support:** Universal Router architecture supporting OpenAI (GPT-4) and Anthropic (Claude 3).
+- [x] **Dashboard V2:** Real-time visual analytics charts for traffic and cost monitoring.
+- [x] **SDK:** Official Python wrapper published on PyPI (`pip install nexus-gateway`).
+- [x] **Monetization:** Stripe integration with automated quota management.
+
+## 🔮 What's Next?
+
+- [ ] **Node.js SDK:** TypeScript wrapper for JS environments.
+- [ ] **Team Accounts:** Organization-level billing and API key management.
+- [ ] **Advanced Logging:** Searchable history of all past requests and responses.
+
+---
+
+### Built with ❤️ by Sunny Anand
