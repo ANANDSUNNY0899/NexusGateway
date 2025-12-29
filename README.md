@@ -15,7 +15,7 @@
 
 ---
 
-## 📖 Overview
+##  Overview
 
 **Nexus Gateway** is an intelligent middleware designed to sit between your users and Large Language Models (LLMs) like OpenAI. It solves the three biggest problems in AI Engineering today: **Cost, Latency, and Scalability.**
 
@@ -23,26 +23,26 @@ By using **Vector Embeddings (OpenAI text-embedding-3)** and **Cosine Similarity
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
-### 🚀 Performance & Cost
+###  Performance & Cost
 - **Semantic Caching:** Recognizes that "How do I make tea?" and "Recipe for tea" are the same question. Serves cached answers in **<50ms**.
 - **Multi-Layer Storage:** Hot cache in **Redis** (L1) and Vector storage in **Pinecone** (L2).
 - **Cost Reduction:** Proven to reduce OpenAI token usage by up to **90%** for repetitive workloads.
 
-### 🛡️ Security & Scalability
+###  Security & Scalability
 - **Rate Limiting:** Token-bucket algorithm (Redis) to prevent abuse (e.g., 100 requests/limit).
 - **Multi-Tenant Auth:** Secure user management via **Supabase (PostgreSQL)**. Users generate their own `nk-` API keys.
 - **Stateless Architecture:** Fully containerized Go binary deployed on **Render Cloud**.
 
-### 💰 Monetization (SaaS Ready)
+###  Monetization (SaaS Ready)
 - **Automated Billing:** Integrated **Stripe Checkout** for plan upgrades.
 - **Webhooks:** Real-time account upgrades via Stripe Webhooks.
 - **Usage Tracking:** Tracks every token and request per user.
 
 ---
 
-## 🛠️ System Architecture
+##  System Architecture
 
 ```mermaid
 graph TD
@@ -110,7 +110,7 @@ pip install nexus-gateway
 - [x] **SDK:** Official Python wrapper published on PyPI (`pip install nexus-gateway`).
 - [x] **Monetization:** Stripe integration with automated quota management.
 
-## 🔮 What's Next?
+##  What's Next?
 
 - [ ] **Node.js SDK:** TypeScript wrapper for JS environments.
 - [ ] **Team Accounts:** Organization-level billing and API key management.
