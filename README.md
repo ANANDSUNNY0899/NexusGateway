@@ -9,7 +9,7 @@
 ![Stripe](https://img.shields.io/badge/Stripe-5433FF?style=for-the-badge&logo=stripe&logoColor=white)
 ![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-black?style=for-the-badge)
 
-[Live Demo](https://nexus-frontend-rlekpcxos-sunny-anands-projects.vercel.app/) · [Report Bug](https://github.com/ANANDSUNNY0899/NexusGateway/issues) · [Request Feature](https://github.com/ANANDSUNNY0899/NexusGateway/issues)
+[Live Demo](https://nexus-gateway.org) · [Report Bug](https://github.com/ANANDSUNNY0899/NexusGateway/issues) · [Request Feature](https://github.com/ANANDSUNNY0899/NexusGateway/issues)
 
 </div>
 
