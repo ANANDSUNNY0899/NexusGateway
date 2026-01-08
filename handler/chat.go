@@ -185,6 +185,11 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	userKey := getAPIKey(r) // <--- 1. Capture the User Key
 
+	client := GetClient()
+	if client != nil {
+		client.Incr(ctx, "stats:total_requests")
+	}
+
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
