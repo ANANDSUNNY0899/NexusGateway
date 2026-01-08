@@ -141,8 +141,6 @@
 
 
 
-
-
 package handler
 
 import (
@@ -183,9 +181,12 @@ func GenerateHash(input string) string {
 func HandleChat(w http.ResponseWriter, r *http.Request) {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
-	userKey := getAPIKey(r) // <--- 1. Capture the User Key
+	userKey := getAPIKey(r) 
 
+	// 1. GET REDIS CLIENT (Once)
 	client := GetClient()
+
+	// 2. Increment Total Requests
 	if client != nil {
 		client.Incr(ctx, "stats:total_requests")
 	}
@@ -215,11 +216,9 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			if score > 0.85 {
 				log.Println("⚡ SEMANTIC HIT: Serving from Pinecone")
 				
-				// Redis Counter
-				client := GetClient()
+				// Reuse 'client' variable
 				if client != nil { client.Incr(ctx, "stats:cache_hits") }
 
-				// Postgres Log (THIS WAS LIKELY MISSING OR BROKEN)
 				LogRequest(userKey, userReq.Model, 200, true)
 
 				w.Header().Set("Content-Type", "application/json")
@@ -228,7 +227,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 						{ "message": map[string]string{ "content": cachedAnswer } },
 					},
 				})
-				return // <--- Stop here
+				return 
 			}
 		}
 	}
@@ -236,7 +235,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// --- CACHE MISS LOGIC ---
 	log.Printf("🐢 CACHE MISS: Routing request to %s...", userReq.Model)
 	
-	client := GetClient()
+	// Reuse 'client' variable
 	if client != nil { client.Incr(ctx, "stats:cache_misses") }
 
 	provider, err := GetProvider(userReq.Model, cfg.OpenAIKey, cfg.AnthropicKey)
@@ -249,7 +248,6 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Provider Error: %v", err)
 		
-		// Log Error to DB
 		LogRequest(userKey, userReq.Model, 500, false)
 
 		http.Error(w, "AI Provider Error: "+err.Error(), http.StatusBadGateway)
@@ -261,7 +259,6 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, responseText)
 	}
 
-	// Log Success to DB (Miss)
 	LogRequest(userKey, userReq.Model, 200, false)
 
 	w.Header().Set("Content-Type", "application/json")
