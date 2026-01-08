@@ -20,6 +20,11 @@ type StreamRequestPayload struct {
 func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	cfg := config.LoadConfig()
 
+	client := GetClient()
+    if client != nil {
+        client.Incr(context.Background(), "stats:total_requests")
+    }
+
 	// 1. Set Headers for Streaming (Crucial)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
