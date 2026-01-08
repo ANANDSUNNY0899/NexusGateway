@@ -15,7 +15,7 @@ type RegisterRequest struct {
 type RegisterResponse struct {
 	Email  string `json:"email"`
 	APIKey string `json:"api_key"`
-	Status string `json:"status"` // "created" or "found"
+	Status string `json:"status"` 
 }
 
 func HandleRegister(w http.ResponseWriter, r *http.Request) {
