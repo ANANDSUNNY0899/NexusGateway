@@ -1,6 +1,8 @@
 <div align="center">
 
-# ⚡ Nexus Gateway
+<img src="https://nexus-gateway.org/favicon.ico" width="80" height="80" />
+
+#  Nexus Gateway
 ### High-Performance AI Semantic Caching & Monetization Layer
 
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
