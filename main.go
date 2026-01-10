@@ -50,6 +50,9 @@ func main() {
 	// 4. PROTECTED ROUTES
 	protectedChat := handler.AuthMiddleware(handler.RateLimitMiddleware(handler.HandleChat))
 	protectedStream := handler.AuthMiddleware(handler.RateLimitMiddleware(handler.HandleStreamChat))
+
+	http.HandleFunc("/api/logs", handler.CORSMiddleware(handler.HandleGetLogs))
+
 	
 	http.HandleFunc("/api/chat", handler.CORSMiddleware(protectedChat))
 	http.HandleFunc("/api/chat/stream", handler.CORSMiddleware(protectedStream))
