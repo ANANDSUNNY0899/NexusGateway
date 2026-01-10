@@ -197,6 +197,16 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// <--- NEW FIREWALL LOGIC --->
+    originalMessage := userReq.Message
+    userReq.Message = RedactPII(originalMessage)
+    
+    if originalMessage != userReq.Message {
+        log.Println("🛡️ PII Detected & Redacted by Firewall")
+    }
+    // <--- END FIREWALL LOGIC --->
+	
+
 	if userReq.Model == "" {
 		userReq.Model = "gpt-3.5-turbo"
 	}
