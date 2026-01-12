@@ -46,6 +46,13 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
 
+	// 🛡️ FIREWALL ACTIVATION
+    original := userReq.Message
+    userReq.Message = RedactPII(original)
+    if original != userReq.Message {
+        log.Println("🛡️ Stream Firewall: PII Redacted")
+    }
+
 	redisClient := GetClient()
 	if redisClient != nil {
 		redisClient.Incr(ctx, "stats:total_requests")
