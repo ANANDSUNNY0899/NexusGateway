@@ -32,7 +32,7 @@ func ValidateAPIKey(apiKey string) bool {
 	var exists bool
 	err := db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM users WHERE api_key=$1)", apiKey).Scan(&exists)
 	if err != nil {
-		log.Printf("DB Error: %v", err)
+		log.Printf("❌ DB Validation Error: %v", err)
 		return false
 	}
 	return exists
