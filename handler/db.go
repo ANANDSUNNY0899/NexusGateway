@@ -28,7 +28,10 @@ func InitializeDB(connString string) {
 }
 
 func ValidateAPIKey(apiKey string) bool {
-	if db == nil { return false }
+	if db == nil {
+		log.Println("❌ CRITICAL: DB IS NIL")
+		 return false 
+		}
 	var exists bool
 	err := db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM users WHERE api_key=$1)", apiKey).Scan(&exists)
 	if err != nil {
