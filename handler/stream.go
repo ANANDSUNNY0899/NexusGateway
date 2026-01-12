@@ -19,42 +19,52 @@ type StreamRequestPayload struct {
 	Stream   bool      `json:"stream"`
 }
 
+// Helper needed inside this file too
+func getStreamAPIKey(r *http.Request) string {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" { return "" }
+	parts := strings.Split(authHeader, " ")
+	if len(parts) == 2 { return strings.TrimSpace(parts[1]) }
+	return ""
+}
+
 func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
+	userKey := getStreamAPIKey(r) // Capture Key
 
-	// 1. Headers
+	// Headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	// 2. Parse Request
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
+		LogRequest(userKey, "unknown", 400, false) // Log Error
 		return
 	}
 	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
 
-    // 3. LOGGING (Increment Counter)
 	redisClient := GetClient()
 	if redisClient != nil {
 		redisClient.Incr(ctx, "stats:total_requests")
 	}
 
-	// 4. CHECK CACHE (Pinecone)
+	// CHECK CACHE
 	log.Println("🧠 Stream: Checking Cache...")
 	vector, _ := GetEmbedding(userReq.Message, cfg.OpenAIKey)
 
 	if vector != nil && cfg.PineconeKey != "" {
 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
 		
-		// CACHE HIT!
 		if err == nil && score > 0.85 {
-			log.Println("⚡ STREAM HIT: Serving from Pinecone")
+			log.Println("⚡ STREAM HIT")
             if redisClient != nil { redisClient.Incr(ctx, "stats:cache_hits") }
 			
-			// Fake Stream the Cached Answer
+			// Log HIT to DB
+			LogRequest(userKey, userReq.Model, 200, true)
+
 			words := strings.Split(cachedAnswer, " ")
 			for _, word := range words {
 				chunk := map[string]any{
@@ -72,8 +82,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 5. CACHE MISS (Call OpenAI)
-	log.Println("🐢 STREAM MISS: Calling OpenAI...")
+	// CACHE MISS
+	log.Println("🐢 STREAM MISS")
     if redisClient != nil { redisClient.Incr(ctx, "stats:cache_misses") }
 	
 	payload := StreamRequestPayload{
@@ -90,6 +100,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		LogRequest(userKey, userReq.Model, 500, false) // Log Error
 		fmt.Fprintf(w, "data: Error connecting to OpenAI\n\n")
 		return
 	}
@@ -123,13 +134,12 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 6. SAVE TO CACHE
+	// Save to Cache
 	if vector != nil && cfg.PineconeKey != "" && fullResponse != "" {
 		id := GenerateHash(userReq.Message)
 		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, fullResponse)
-		log.Println("💾 Stream Saved to Pinecone")
 	}
 
-	userKey := getAPIKey(r) // Make sure you have this helper or extract it manually
-    LogRequest(userKey, userReq.Model, 200, false)
+	// Log MISS to DB
+	LogRequest(userKey, userReq.Model, 200, false)
 }
