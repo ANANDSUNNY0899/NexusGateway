@@ -141,6 +141,8 @@
 
 
 
+
+
 package handler
 
 import (
@@ -183,74 +185,69 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	userKey := getAPIKey(r) 
 
-	// 1. GET REDIS CLIENT (Once)
+	// 1. Increment Global Counter (Redis)
+	// This makes the "Total Requests" number go up immediately
 	client := GetClient()
-
-	// 2. Increment Total Requests
 	if client != nil {
 		client.Incr(ctx, "stats:total_requests")
 	}
 
+	// 2. Parse User Request
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
+		// Log Bad Request
+		LogRequest(userKey, "unknown", 400, false)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
-	// <--- NEW FIREWALL LOGIC --->
-    originalMessage := userReq.Message
-    userReq.Message = RedactPII(originalMessage)
-    
-    if originalMessage != userReq.Message {
-        log.Println("🛡️ PII Detected & Redacted by Firewall")
-    }
-    // <--- END FIREWALL LOGIC --->
-	
 
 	if userReq.Model == "" {
 		userReq.Model = "gpt-3.5-turbo"
 	}
 
+	// 3. Generate Embedding (For Cache)
 	log.Println("🧠 Generating Embedding...")
 	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
 	if err != nil {
 		log.Printf("Embedding Warning: %v", err)
 	}
 
-	// --- CACHE HIT LOGIC ---
+	// 4. CHECK CACHE (Pinecone)
 	if vector != nil && cfg.PineconeKey != "" {
 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-		if err == nil {
-			log.Printf("🔍 Similarity Score: %.2f", score)
+		
+		// If found (> 85% match)
+		if err == nil && score > 0.85 {
+			log.Println("⚡ SEMANTIC HIT")
 			
-			if score > 0.85 {
-				log.Println("⚡ SEMANTIC HIT: Serving from Pinecone")
-				
-				// Reuse 'client' variable
-				if client != nil { client.Incr(ctx, "stats:cache_hits") }
+			// Update Redis Hit Counter
+			if client != nil { client.Incr(ctx, "stats:cache_hits") }
 
-				LogRequest(userKey, userReq.Model, 200, true)
+			// !!! CRITICAL: Log to Database !!!
+			LogRequest(userKey, userReq.Model, 200, true)
 
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{
-					"choices": []map[string]any{
-						{ "message": map[string]string{ "content": cachedAnswer } },
-					},
-				})
-				return 
-			}
+			// Return Answer
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{ "message": map[string]string{ "content": cachedAnswer } },
+				},
+			})
+			return // STOP HERE
 		}
 	}
 
-	// --- CACHE MISS LOGIC ---
-	log.Printf("🐢 CACHE MISS: Routing request to %s...", userReq.Model)
+	// 5. CACHE MISS (Call AI Provider)
+	log.Printf("🐢 CACHE MISS: Routing to %s", userReq.Model)
 	
-	// Reuse 'client' variable
+	// Update Redis Miss Counter
 	if client != nil { client.Incr(ctx, "stats:cache_misses") }
 
 	provider, err := GetProvider(userReq.Model, cfg.OpenAIKey, cfg.AnthropicKey)
 	if err != nil {
-		http.Error(w, "Invalid Model", http.StatusBadRequest)
+		// Log Internal Error
+		LogRequest(userKey, userReq.Model, 400, false)
+		http.Error(w, "Invalid Model Config", http.StatusBadRequest)
 		return
 	}
 
@@ -258,19 +255,24 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Provider Error: %v", err)
 		
+		// !!! CRITICAL: Log the Error !!!
+		// This ensures your graph shows the failed attempt
 		LogRequest(userKey, userReq.Model, 500, false)
 
 		http.Error(w, "AI Provider Error: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
+	// 6. Save new answer to Pinecone
 	if vector != nil && cfg.PineconeKey != "" {
 		id := GenerateHash(userReq.Message)
 		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, responseText)
 	}
 
+	// !!! CRITICAL: Log the Success !!!
 	LogRequest(userKey, userReq.Model, 200, false)
 
+	// Return Answer
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"choices": []map[string]any{

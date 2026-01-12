@@ -83,8 +83,6 @@ type GraphPoint struct {
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
-	cfg := config.LoadConfig()
-
 	// 1. Get Counters from Redis
 	client := GetClient()
 	var total, hits int64
@@ -93,20 +91,21 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		hits, _ = client.Get(context.Background(), "stats:cache_hits").Int64()
 	}
 
-	// 2. Get Graph Data (Last 60 Minutes, Minute-by-Minute)
+	// 2. Get Graph Data (Last 24 Hours, Hourly Grouping)
 	graphData := []GraphPoint{}
 	
-	// We need to connect to DB if global db var is nil (safety check)
-	if db == nil && cfg.DBUrl != "" {
-		InitializeDB(cfg.DBUrl)
+	if db == nil {
+		// Safety: Try to reconnect or fail gracefully
+		cfg := config.LoadConfig()
+		if cfg.DBUrl != "" { InitializeDB(cfg.DBUrl) }
 	}
 
 	if db != nil {
-		// CHANGED QUERY: Group by MINUTE ('HH24:MI') for the last 1 HOUR
+		// QUERY: Group by HOUR for the last 24 HOURS
 		query := `
-			SELECT to_char(created_at, 'HH24:MI') as time, COUNT(*) as count
+			SELECT to_char(created_at, 'HH24:00') as time, COUNT(*) as count
 			FROM request_logs
-			WHERE created_at > NOW() - INTERVAL '60 minutes'
+			WHERE created_at > NOW() - INTERVAL '24 hours'
 			GROUP BY time
 			ORDER BY time ASC;
 		`
