@@ -58,7 +58,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	if vector != nil && cfg.PineconeKey != "" {
 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
 		
-		if err == nil && score > 0.85 {
+		if err == nil && score > 0.75 {
 			log.Println("⚡ STREAM HIT")
             if redisClient != nil { redisClient.Incr(ctx, "stats:cache_hits") }
 			

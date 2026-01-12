@@ -217,7 +217,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
 		
 		// If found (> 85% match)
-		if err == nil && score > 0.85 {
+		if err == nil && score > 0.75 {
 			log.Println("⚡ SEMANTIC HIT")
 			
 			// Update Redis Hit Counter
