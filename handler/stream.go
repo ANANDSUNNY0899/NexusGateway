@@ -129,4 +129,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, fullResponse)
 		log.Println("💾 Stream Saved to Pinecone")
 	}
+
+	userKey := getAPIKey(r) // Make sure you have this helper or extract it manually
+    LogRequest(userKey, userReq.Model, 200, false)
 }
