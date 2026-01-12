@@ -5,41 +5,50 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool" // <--- New Import
 )
 
-var db *pgx.Conn
+// Global Pool Variable
+var db *pgxpool.Pool // <--- Changed from *pgx.Conn to *pgxpool.Pool
 
 func InitializeDB(connString string) {
-	// 1. Parse Config
-	config, err := pgx.ParseConfig(connString)
+	// Parse Config
+	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		log.Fatalf("❌ Invalid DB URL: %v", err)
 	}
 
-	// 2. FORCE Simple Protocol (Crucial for Supabase Pooler)
-	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	// Pool Settings (Handle Concurrency)
+	config.MaxConns = 20
+	config.MinConns = 2
+	
+	// Force Simple Protocol (Fixes Supabase Error)
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	// 3. Connect
-	db, err = pgx.ConnectConfig(context.Background(), config)
+	// Connect
+	db, err = pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		log.Fatalf("❌ Unable to connect to database: %v", err)
 	}
-	log.Println("✅ Connected to Supabase (Simple Mode)")
+	log.Println("✅ Connected to Supabase (Connection Pool)")
 }
 
 func ValidateAPIKey(apiKey string) bool {
 	if db == nil {
 		log.Println("❌ CRITICAL: DB IS NIL")
-		 return false 
-		}
+		return false
+	}
 	var exists bool
 	err := db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM users WHERE api_key=$1)", apiKey).Scan(&exists)
+	
 	if err != nil {
 		log.Printf("❌ DB Validation Error: %v", err)
 		return false
 	}
 	return exists
 }
+
+// ... (Keep CheckUserLimit, IncrementUsage, UpgradeUser as is) ...
 
 // <--- NEW FUNCTIONS START HERE --->
 
