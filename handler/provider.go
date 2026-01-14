@@ -1,3 +1,4 @@
+
 package handler
 
 import (
@@ -8,26 +9,25 @@ import (
 	"net/http"
 )
 
-// 1. THE CONTRACT
+// THE CONTRACT
 type AIProvider interface {
 	Send(prompt string) (string, error)
 }
 
-// 2. THE FACTORY
+// THE FACTORY
 func GetProvider(modelName string, openAIKey string, anthropicKey string) (AIProvider, error) {
 	switch modelName {
-	case "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307":
+	case "claude-3-opus-20240229", "claude-3-sonnet-20240229":
 		return &AnthropicProvider{APIKey: anthropicKey, Model: modelName}, nil
 	case "gpt-3.5-turbo", "gpt-4", "gpt-4o":
 		return &OpenAIProvider{APIKey: openAIKey, Model: modelName}, nil
 	default:
-		// Default fallback
 		return &OpenAIProvider{APIKey: openAIKey, Model: "gpt-3.5-turbo"}, nil
 	}
 }
 
 // ---------------------------
-// 3. OPENAI IMPLEMENTATION
+// OPENAI IMPLEMENTATION
 // ---------------------------
 type OpenAIProvider struct {
 	APIKey string
@@ -44,9 +44,12 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// Correct Struct to parse OpenAI Response
 type OpenAIResponse struct {
 	Choices []struct {
-		Message Message `json:"message"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
 	} `json:"choices"`
 }
 
@@ -75,24 +78,27 @@ func (p *OpenAIProvider) Send(prompt string) (string, error) {
 		return "", fmt.Errorf("OpenAI API Error: %s", string(body))
 	}
 
+	// PARSE THE JSON
 	var result OpenAIResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to parse OpenAI response")
+	}
 	
 	if len(result.Choices) > 0 {
+		// Return ONLY the text content
 		return result.Choices[0].Message.Content, nil
 	}
-	return "", fmt.Errorf("no response from OpenAI")
+	return "", fmt.Errorf("no response content from OpenAI")
 }
 
 // ---------------------------
-// 4. ANTHROPIC IMPLEMENTATION
+// ANTHROPIC IMPLEMENTATION
 // ---------------------------
 type AnthropicProvider struct {
 	APIKey string
 	Model  string
 }
 
-// Anthropic has a slightly different JSON structure
 type AnthropicRequest struct {
 	Model     string    `json:"model"`
 	Messages  []Message `json:"messages"`
@@ -117,7 +123,7 @@ func (p *AnthropicProvider) Send(prompt string) (string, error) {
 
 	req, _ := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonBody))
 	req.Header.Set("x-api-key", p.APIKey)
-	req.Header.Set("anthropic-version", "2023-06-01") // Required header
+	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

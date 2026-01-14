@@ -35,6 +35,19 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		// <--- END FIX --->
 
+
+		// <--- NEW: BYOK BYPASS --->
+		userOwnKey := r.Header.Get("x-nexus-openai-key")
+		if userOwnKey != "" {
+			// If they bring their own key, they pay OpenAI directly.
+			// We skip the quota check and don't increment usage.
+			next(w, r)
+			return
+		}
+		// <--- END NEW --->
+
+		
+
 		// C. Check Quota (Do they have credits?)
 		allowed, err := CheckUserLimit(token)
 		if err != nil {
@@ -54,6 +67,8 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// E. Pass
 		next(w, r)
 	}
+
+
 }
 
 // 2. RATE LIMIT MIDDLEWARE
