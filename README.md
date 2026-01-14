@@ -29,13 +29,13 @@ By using **Vector Embeddings (OpenAI text-embedding-3)** and **Cosine Similarity
 
 ###  Performance & Cost
 - **Semantic Caching:** Recognizes that "How do I make tea?" and "Recipe for tea" are the same question. Serves cached answers in **<50ms**.
-- **Multi-Layer Storage:** Hot cache in **Redis** (L1) and Vector storage in **Pinecone** (L2).
-- **Cost Reduction:** Proven to reduce OpenAI token usage by up to **90%** for repetitive workloads.
+- **Universal Router:** Dynamically switches between **GPT-4** and **Claude 3** based on user payload.
+- **Streaming Support:** Full Server-Sent Events (SSE) support for real-time typing effect.
 
-###  Security & Scalability
-- **Rate Limiting:** Token-bucket algorithm (Redis) to prevent abuse (e.g., 100 requests/limit).
-- **Multi-Tenant Auth:** Secure user management via **Supabase (PostgreSQL)**. Users generate their own `nk-` API keys.
-- **Stateless Architecture:** Fully containerized Go binary deployed on **Render Cloud**.
+###  Security & Privacy
+- **PII Firewall:** Automatically redacts sensitive data (Emails, Phone Numbers) before sending prompts to OpenAI.
+- **Rate Limiting:** Token-bucket algorithm (Redis) to prevent abuse.
+- **Multi-Tenant Auth:** Secure user management via **Supabase**.
 
 ###  Monetization (SaaS Ready)
 - **Automated Billing:** Integrated **Stripe Checkout** for plan upgrades.
@@ -52,25 +52,27 @@ graph TD
     Go -->|2. Check Rate Limit| Redis[("Redis Cache")]
     Go -->|3. Check Auth & Quota| DB[("Supabase Postgres")]
     
-    Go -->|4. Generate Embedding| OAI["OpenAI Embeddings API"]
+    Go -->|4. Firewall Scan| PII["PII Redaction Engine"]
     
-    Go -->|5. Semantic Search| Pine[("Pinecone Vector DB")]
+    Go -->|5. Generate Embedding| OAI["OpenAI Embeddings API"]
     
-    Pine -- "Hit (>0.90 Score)" --> Go
-    Pine -- Miss --> LLM["OpenAI GPT-4"]
+    Go -->|6. Semantic Search| Pine[("Pinecone Vector DB")]
+    
+    Pine -- "Hit (>0.75 Score)" --> Go
+    Pine -- Miss --> LLM["OpenAI / Anthropic"]
     
     LLM --> Go
-    Go -->|6. Cache Result| Pine
+    Go -->|7. Cache Result| Pine
     Go --> User
 ```
 <br/>
 
 # Getting Started
-Prerequisites
-Go 1.21+
-Redis Instance (Upstash/Local)
-PostgreSQL (Supabase/Local)
-API Keys (OpenAI, Pinecone, Stripe)
+## Prerequisites
+    * Go 1.21+
+    * Redis Instance (Upstash/Local)
+    * PostgreSQL (Supabase/Local)
+    * API Keys (OpenAI, Pinecone, Stripe)
 
 ## Installation
 1. Clone the Repo
@@ -94,9 +96,10 @@ pip install nexus-gateway
     export DB_URL="postgresql://..."
     export STRIPE_SECRET_KEY="sk_test_..."
 
-```
-3. Run the Server: go run main.go
-```
+3. Run the Server: 
+```bash
+   go run main.go
+ ```
 
 4. API Endpoints
     * Method	Endpoint	Description	Auth Required
@@ -104,6 +107,10 @@ pip install nexus-gateway
     * POST	/api/chat	Send prompt to AI (Cached)	✅ Yes
     * POST	/api/checkout	Generate Stripe Payment Link	✅ Yes
     * GET	/api/stats	View global savings stats	❌ No
+
+##  SDKs & Tools
+   * Python SDK: pip install nexus-gateway (PyPI Link)
+   * Node.js SDK: npm install nexus-gateway-js (NPM Link)
 
 ##  Completed Roadmap
 
