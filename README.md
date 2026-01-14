@@ -109,8 +109,8 @@ pip install nexus-gateway
     * GET	/api/stats	View global savings stats	❌ No
 
 ##  SDKs & Tools
-   * Python SDK: pip install nexus-gateway (PyPI Link)
-   * Node.js SDK: npm install nexus-gateway-js (NPM Link)
+   * Python SDK: pip install nexus-gateway (https://pypi.org/project/nexus-gateway/)
+   * Node.js SDK: npm install nexus-gateway-js (https://www.npmjs.com/package/nexus-gateway-js)
 
 ##  Completed Roadmap
 
