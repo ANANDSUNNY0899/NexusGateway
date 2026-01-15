@@ -172,6 +172,11 @@ import (
 	"time"
 )
 
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 type StreamRequestPayload struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
