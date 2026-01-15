@@ -21,34 +21,31 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// B. Validate Key
+		// B. Validate Nexus API Key
 		if !ValidateAPIKey(token) {
 			http.Error(w, "Invalid API Key", http.StatusUnauthorized)
 			return
 		}
 
-		// <--- NEW FIX: EXEMPT CHECKOUT FROM QUOTA CHECK --->
-		// If they are trying to pay, let them through!
+		// --- EXEMPTIONS ---
+		// 1. If they are trying to pay, let them through!
 		if r.URL.Path == "/api/checkout" {
 			next(w, r)
 			return
 		}
-		// <--- END FIX --->
 
+		// 2. BYOK BYPASS (If they provide ANY provider key, they bypass our quota)
+		userOwnOpenAI := r.Header.Get("x-nexus-openai-key")
+		userOwnGroq := r.Header.Get("x-nexus-groq-key")
+		userOwnGemini := r.Header.Get("x-nexus-gemini-key")
 
-		// <--- NEW: BYOK BYPASS --->
-		userOwnKey := r.Header.Get("x-nexus-openai-key")
-		if userOwnKey != "" {
-			// If they bring their own key, they pay OpenAI directly.
-			// We skip the quota check and don't increment usage.
+		if userOwnOpenAI != "" || userOwnGroq != "" || userOwnGemini != "" {
+			// They are paying the provider directly. We only provide the Caching/Intelligence.
 			next(w, r)
 			return
 		}
-		// <--- END NEW --->
 
-		
-
-		// C. Check Quota (Do they have credits?)
+		// C. Check Quota (Only for users using Nexus Credits)
 		allowed, err := CheckUserLimit(token)
 		if err != nil {
 			log.Printf("DB Error: %v", err)
@@ -57,18 +54,16 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		
 		if !allowed {
-			http.Error(w, "402 - Quota Exceeded. Upgrade your plan.", http.StatusPaymentRequired)
+			http.Error(w, "402 - Quota Exceeded. Upgrade your plan or provide a BYOK key.", http.StatusPaymentRequired)
 			return
 		}
 
-		// D. Increment Usage (Charge them 1 credit)
+		// D. Increment Usage (Only if NOT using BYOK)
 		IncrementUsage(token)
 
 		// E. Pass
 		next(w, r)
 	}
-
-
 }
 
 // 2. RATE LIMIT MIDDLEWARE
@@ -80,18 +75,19 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		key := "rate:" + ip
-		limit := 10 
+		limit := 20 // Increased for better UX
 
 		client := GetClient()
 		if client != nil {
-			count, err := client.Incr(ctx, key).Result()
+			// Use r.Context() for better request lifecycle management
+			count, err := client.Incr(r.Context(), key).Result()
 			if err != nil {
 				next(w, r)
 				return
 			}
 
 			if count == 1 {
-				client.Expire(ctx, key, 1*time.Minute)
+				client.Expire(r.Context(), key, 1*time.Minute)
 			}
 
 			if count > int64(limit) {
@@ -104,20 +100,16 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-
-
-
-// CORSMiddleware allows other websites (like your Frontend) to talk to this API
+// 3. CORS MIDDLEWARE (The Frontend Fix)
 func CORSMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. Allow any origin (You can restrict this to your domain later)
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		
-		// 2. Allow specific methods and headers
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+		
+		// CRITICAL FIX: Added x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key")
 
-		// 3. Handle "Preflight" requests (Browsers ask "Can I?" before doing it)
+		// Handle Preflight
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
