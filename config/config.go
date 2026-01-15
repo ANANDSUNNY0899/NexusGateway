@@ -55,8 +55,6 @@
 // }
 
 
-
-
 package config
 
 import (
@@ -68,6 +66,8 @@ import (
 type Config struct {
 	OpenAIKey           string
 	AnthropicKey        string
+	GroqKey             string
+	GeminiKey           string
 	RedisURL            string
 	PineconeKey         string
 	PineconeHost        string
@@ -86,6 +86,8 @@ func LoadConfig() *Config {
 	// 1. Get and Clean all keys
 	apiKey := get("OPENAI_API_KEY")
 	anthropicKey := get("ANTHROPIC_API_KEY")
+	groqKey := get("GROQ_API_KEY")
+	geminiKey := get("GEMINI_API_KEY")
 	redisURL := get("REDIS_URL")
 	pineconeKey := get("PINECONE_API_KEY")
 	pineconeHost := get("PINECONE_HOST")
@@ -109,6 +111,8 @@ func LoadConfig() *Config {
 	return &Config{
 		OpenAIKey:           apiKey,
 		AnthropicKey:        anthropicKey,
+		GroqKey:             groqKey,
+		GeminiKey:           geminiKey,
 		RedisURL:            redisURL,
 		PineconeKey:         pineconeKey,
 		PineconeHost:        pineconeHost,

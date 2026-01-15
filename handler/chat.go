@@ -284,6 +284,8 @@
 
 
 
+
+
 package handler
 
 import (
@@ -338,29 +340,32 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
 
 	// --- LAYER 1: THE IRON DOME (Model Gating) ---
-	// If they are NOT using their own key, they CANNOT use expensive models.
 	if !usingOwnKey {
-		if userReq.Model == "gpt-4" || userReq.Model == "gpt-4o" || strings.Contains(userReq.Model, "claude-3-opus") {
-			http.Error(w, "403 - Premium Model. Please provide 'x-nexus-openai-key' or use 'gpt-3.5-turbo'.", http.StatusForbidden)
+		if userReq.Model == "gpt-4" || userReq.Model == "gpt-4o" || strings.Contains(userReq.Model, "claude") {
+			http.Error(w, "403 - Premium Model. Please provide BYOK header or use 'gpt-3.5-turbo' / 'llama3-8b-8192'.", http.StatusForbidden)
 			return
 		}
 	}
 
-	// 2. Determine Which API Key to Use
-	finalOpenAIKey := cfg.OpenAIKey
-	if userOpenAIKey != "" { finalOpenAIKey = userOpenAIKey }
+	// 2. Prepare Keys Map
+	keys := map[string]string{
+		"openai":    cfg.OpenAIKey,
+		"anthropic": cfg.AnthropicKey,
+		"groq":      cfg.GroqKey,
+		"gemini":    cfg.GeminiKey,
+	}
 
-	finalAnthropicKey := cfg.AnthropicKey
-	if userAnthropicKey != "" { finalAnthropicKey = userAnthropicKey }
+	// Override with User Keys if provided
+	if userOpenAIKey != "" { keys["openai"] = userOpenAIKey }
+	if userAnthropicKey != "" { keys["anthropic"] = userAnthropicKey }
 
 	// 3. LOGGING (Counter)
-	// Only increment global counter if they are using OUR keys
 	client := GetClient()
 	if !usingOwnKey && client != nil {
 		client.Incr(ctx, "stats:total_requests")
 	}
 
-	// 4. Generate Embedding (Always use System Key for this, it's cheap)
+	// 4. Generate Embedding (Always use System Key for this)
 	log.Println("🧠 Generating Embedding...")
 	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
 	if err != nil {
@@ -371,9 +376,8 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	if vector != nil && cfg.PineconeKey != "" {
 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
 		
-		if err == nil && score > 0.75 { // 75% Similarity
+		if err == nil && score > 0.75 { 
 			log.Println("⚡ SEMANTIC HIT")
-			
 			if !usingOwnKey && client != nil { client.Incr(ctx, "stats:cache_hits") }
 			LogRequest(userKey, userReq.Model, 200, true)
 
@@ -389,11 +393,10 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// 6. CACHE MISS (Call AI)
 	log.Printf("🐢 CACHE MISS: Routing to %s", userReq.Model)
-	
 	if !usingOwnKey && client != nil { client.Incr(ctx, "stats:cache_misses") }
 
-	// Use the FINAL keys determined above
-	provider, err := GetProvider(userReq.Model, finalOpenAIKey, finalAnthropicKey)
+	// Use the New Provider Factory
+	provider, err := GetProvider(userReq.Model, keys)
 	if err != nil {
 		LogRequest(userKey, userReq.Model, 400, false)
 		http.Error(w, "Invalid Model Config", http.StatusBadRequest)
