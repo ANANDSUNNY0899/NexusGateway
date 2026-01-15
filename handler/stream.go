@@ -342,6 +342,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		lineStr := string(line)
 		
 		if strings.HasPrefix(lineStr, "data: ") {
+
+			log.Printf("DEBUG RAW CHUNK: %s", lineStr)
 			w.Write(line)
 			w.(http.Flusher).Flush()
 
