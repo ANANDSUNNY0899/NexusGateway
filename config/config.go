@@ -55,6 +55,9 @@
 // }
 
 
+
+
+
 package config
 
 import (
@@ -78,47 +81,31 @@ type Config struct {
 }
 
 func LoadConfig() *Config {
-	// Helper function to clean environment variables (removes spaces/newlines)
 	get := func(key string) string {
 		return strings.TrimSpace(os.Getenv(key))
 	}
 
-	// 1. Get and Clean all keys
 	apiKey := get("OPENAI_API_KEY")
-	anthropicKey := get("ANTHROPIC_API_KEY")
-	groqKey := get("GROQ_API_KEY")
-	geminiKey := get("GEMINI_API_KEY")
-	redisURL := get("REDIS_URL")
-	pineconeKey := get("PINECONE_API_KEY")
-	pineconeHost := get("PINECONE_HOST")
-	dbUrl := get("DB_URL")
-	stripeKey := get("STRIPE_SECRET_KEY")
-	webhookSecret := get("STRIPE_WEBHOOK_SECRET")
-	port := get("PORT")
-
-	// 2. Validate Critical Keys
 	if apiKey == "" {
 		log.Fatal("Error: OPENAI_API_KEY is not set")
 	}
-	if dbUrl == "" {
-		log.Println("⚠️ Warning: DB_URL is not set. Auth will fail.")
-	}
+
+	port := get("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// 3. Return the Clean Config
 	return &Config{
 		OpenAIKey:           apiKey,
-		AnthropicKey:        anthropicKey,
-		GroqKey:             groqKey,
-		GeminiKey:           geminiKey,
-		RedisURL:            redisURL,
-		PineconeKey:         pineconeKey,
-		PineconeHost:        pineconeHost,
-		DBUrl:               dbUrl,
-		StripeSecretKey:     stripeKey,
-		StripeWebhookSecret: webhookSecret,
+		AnthropicKey:        get("ANTHROPIC_API_KEY"),
+		GroqKey:             get("GROQ_API_KEY"),
+		GeminiKey:           get("GEMINI_API_KEY"),
+		RedisURL:            get("REDIS_URL"),
+		PineconeKey:         get("PINECONE_API_KEY"),
+		PineconeHost:        get("PINECONE_HOST"),
+		DBUrl:               get("DB_URL"),
+		StripeSecretKey:     get("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret: get("STRIPE_WEBHOOK_SECRET"),
 		Port:                port,
 	}
 }
