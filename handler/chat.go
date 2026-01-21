@@ -29,7 +29,8 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// 2. PARSE REQUEST
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0)
+		// FIX 1: Added "", ""
+		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "")
 		respondWithError(w, "Invalid JSON payload", http.StatusBadRequest)
 		return
 	}
@@ -38,8 +39,9 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// 3. IRON DOME (MODEL GATE)
 	if !usingOwnKey {
 		if strings.Contains(userReq.Model, "gpt-4") || strings.Contains(userReq.Model, "claude-3") {
-			LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0)
-			respondWithError(w, "Premium Model Access Denied. Use BYOK or Upgrade.", http.StatusForbidden)
+			// FIX 2: Added userReq.Message, ""
+			LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, "")
+			respondWithError(w, "Premium Model Access Denied", http.StatusForbidden)
 			return
 		}
 	}
@@ -57,7 +59,8 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			sav := CalculateSavings(userReq.Model, pT, cT)
 			lat := int(time.Since(startTime).Milliseconds())
 
-			go LogRequest(userKey, userReq.Model, 200, true, pT, cT, sav, lat)
+			// FIX 3: Added userReq.Message, cached
+			go LogRequest(userKey, userReq.Model, 200, true, pT, cT, sav, lat, userReq.Message, cached)
 			
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
@@ -87,7 +90,8 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Do(req)
 	
 	if err != nil || resp.StatusCode != 200 {
-		LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0)
+		// FIX 4: Added userReq.Message, ""
+		LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, "")
 		respondWithError(w, "AI Provider failure", http.StatusBadGateway)
 		return
 	}
@@ -114,7 +118,8 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			lat := int(time.Since(startTime).Milliseconds())
 			
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, responseText, 24*time.Hour) }
-			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, lat)
+			// FIX 5: Added userReq.Message, responseText
+			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, lat, userReq.Message, responseText)
 		}()
 	}
 

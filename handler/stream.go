@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Global Discovery Cache for Gemini
+// Global Discovery Cache
 var discoveredModelMap = sync.Map{}
 
 // --- MAIN HANDLER ---
@@ -27,13 +27,13 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	userKey := getStreamAPIKey(r)
 	redisClient := GetClient()
 
-	// 1. CAPTURE BYOK & AUTH HEADERS
+	// 1. BYOK CAPTURE & RESOLUTION
 	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
 	userGroqKey := r.Header.Get("x-nexus-groq-key")
 	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
 	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "")
 
-	// Set Professional SSE Headers
+	// Set Headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no") 
 	w.Header().Set("Cache-Control", "no-cache")
@@ -42,7 +42,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0)
+		// FIX: Added 10 arguments
+		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "")
 		return
 	}
 	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
@@ -50,24 +51,27 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	// --- 📥 LOG: REQUEST START ---
 	log.Printf("📥 [REQUEST] User: %s... | Model: %s | BYOK: %v", userKey[:6], userReq.Model, usingOwnKey)
 
-	// 2. HYBRID CACHE LAYER 0 (REDIS EXACT)
+	// 2. HYBRID CACHE LAYER 0 (REDIS)
 	cleanMsg := strings.ToLower(strings.TrimSpace(userReq.Message))
 	msgHash := GenerateHash(cleanMsg)
 	
 	if redisClient != nil {
 		if cached, _ := redisClient.Get(ctx, "exact:"+msgHash).Result(); cached != "" {
-			log.Printf("🚀 [HIT] Redis match serving instantly.")
-			streamSimulatedResponse(w, cached)
+			log.Printf("🚀 [HIT] Redis serving instantly.")
 			
 			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cached)
 			sav := CalculateSavings(userReq.Model, pT, rT)
-			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, sav, int(time.Since(startTime).Milliseconds()))
+			lat := int(time.Since(startTime).Milliseconds())
+
+			// Log detailed hit
+			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, sav, lat, userReq.Message, cached)
+			
+			streamSimulatedResponse(w, cached)
 			return
 		}
 	}
 
-	// --- 🐢 LOG: CACHE MISS ---
-	log.Printf("🐢 [MISS] No local match found. Routing to provider...")
+	log.Printf("🐢 [MISS] No local match found for: %s", msgHash[:8])
 
 	// 3. VECTOR DB SEARCH (LAYER 1)
 	vector, _ := GetEmbedding(userReq.Message, cfg.OpenAIKey)
@@ -75,16 +79,19 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
 		if err == nil && score > 0.75 {
 			log.Printf("⚡ [PINECONE HIT] Score: %.2f", score)
-			streamSimulatedResponse(w, cachedAnswer)
 			
 			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cachedAnswer)
 			sav := CalculateSavings(userReq.Model, pT, rT)
-			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, sav, int(time.Since(startTime).Milliseconds()))
+			lat := int(time.Since(startTime).Milliseconds())
+
+			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, sav, lat, userReq.Message, cachedAnswer)
+			
+			streamSimulatedResponse(w, cachedAnswer)
 			return
 		}
 	}
 
-	// 4. UNIVERSAL ROUTER (SELF-HEALING)
+	// 4. UNIVERSAL ROUTER
 	var targetURL string
 	var payloadBytes []byte
 	modelLower := strings.ToLower(userReq.Model)
@@ -92,22 +99,20 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	isGemini := strings.Contains(modelLower, "gemini")
 
 	if strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral") {
-		// GROQ ROUTE - Normalized for Browser Success
 		targetURL = "https://api.groq.com/openai/v1/chat/completions"
 		targetKey = cfg.GroqKey
 		if userGroqKey != "" { targetKey = userGroqKey }
 
-		// Use modern stable model ID
+		// FIX: Added missing quote
 		groqModel := "llama-3.3-70b-versatile"
 		payloadBytes, _ = json.Marshal(StreamRequestPayload{Model: groqModel, Messages: []Message{{Role: "user", Content: userReq.Message}}, Stream: true})
 		log.Printf("🔀 [ROUTING] Groq Bridge -> %s", groqModel)
 
 	} else if isGemini {
-		// ADAPTIVE GEMINI ROUTE
 		keyToUse := cfg.GeminiKey
 		if userGeminiKey != "" { keyToUse = userGeminiKey }
 		
-		modelID := "gemini-1.5-flash" 
+		modelID := "gemini-1.5-flash"
 		if cached, ok := discoveredModelMap.Load(keyToUse); ok {
 			modelID = cached.(string)
 			log.Printf("📌 [PINNED] Using discovered model: %s", modelID)
@@ -119,7 +124,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🛰️ [ROUTING] Gemini Native Bridge")
 
 	} else {
-		// OPENAI ROUTE
 		targetURL = "https://api.openai.com/v1/chat/completions"
 		targetKey = cfg.OpenAIKey
 		if userOpenAIKey != "" { targetKey = userOpenAIKey }
@@ -151,24 +155,26 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil || resp.StatusCode != 200 {
 		errorBody, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ [PROVIDER ERROR] Status: %d | Body: %s", resp.StatusCode, string(errorBody))
+		
+		// FIX: Added 10 arguments
+		LogRequest(userKey, userReq.Model, resp.StatusCode, false, 0, 0, 0, 0, userReq.Message, string(errorBody))
+		
 		fmt.Fprintf(w, "data: {\"error\": \"Inference failed\", \"details\": %s}\n\n", string(errorBody))
 		return
 	}
 	defer resp.Body.Close()
-	log.Printf("📡 [STREAM] Handshake success. Piping data...")
+	log.Printf("📡 [STREAM] Provider Connected. Piping data...")
 
-	// --- 6. UNIFIED STREAM PARSER WITH PACING & HANG FIX ---
+	// 6. UNIFIED STREAM PARSER WITH PACING & HANG FIX
 	reader := bufio.NewReader(resp.Body)
 	var fullResponseBuilder strings.Builder
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil { break }
 		lineStr := string(line)
-
 		if strings.HasPrefix(lineStr, "data: ") {
 			cleanLine := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
 			
-			// 🚀 THE HANG FIX: Break on [DONE] signal
 			if cleanLine == "[DONE]" { 
 				fmt.Fprintf(w, "data: [DONE]\n\n")
 				w.(http.Flusher).Flush()
@@ -191,7 +197,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// --- 🚀 THE SMOOTH-STREAM PACING ---
 			if extractedText != "" {
 				fullResponseBuilder.WriteString(extractedText)
 
@@ -205,7 +210,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 					fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
 					w.(http.Flusher).Flush()
 
-					// Pacing delay: 5ms for large dumps (Gemini), 0ms for word-by-word (OpenAI)
 					if len(words) > 1 {
 						time.Sleep(5 * time.Millisecond)
 					}
@@ -220,7 +224,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
 	if finalText != "" {
 		go func() {
-			pT, cT := len(userReq.Message)/4, len(finalText)/4
+			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(finalText)
 			latency := int(time.Since(startTime).Milliseconds())
 			
 			log.Printf("📊 [LEDGER] Telemetry: %d tokens | %dms latency", pT+cT, latency)
@@ -232,7 +236,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, finalText, 24*time.Hour) }
 			if vector != nil && cfg.PineconeKey != "" { SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, msgHash, vector, finalText) }
 			
-			// 🚀 THE X-RAY LOG: Now sending actual text payload
 			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency, userReq.Message, finalText)
 		}()
 	}
@@ -244,17 +247,13 @@ func discoverWorkingGemini(key string) string {
 	log.Printf("🔍 [DISCOVERY] Mapping available models for this key...")
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", key)
 	resp, _ := http.Get(url)
-	defer resp.Body.Close()
+	if resp != nil { defer resp.Body.Close() }
 	var list struct { Models []struct { Name string `json:"name"` } `json:"models"` }
 	json.NewDecoder(resp.Body).Decode(&list)
 	
 	for _, m := range list.Models {
 		name := strings.TrimPrefix(m.Name, "models/")
 		if name == "gemini-1.5-flash" { return name }
-	}
-	for _, m := range list.Models {
-		name := strings.TrimPrefix(m.Name, "models/")
-		if strings.Contains(name, "flash") { return name }
 	}
 	return "gemini-pro"
 }
