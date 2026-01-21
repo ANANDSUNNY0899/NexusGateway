@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Global Discovery Cache - Maps API Keys to their working Gemini Model ID
+// Global Discovery Cache for Gemini
 var discoveredModelMap = sync.Map{}
 
 // --- MAIN HANDLER ---
@@ -50,16 +50,15 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	// --- 📥 LOG: REQUEST START ---
 	log.Printf("📥 [REQUEST] User: %s... | Model: %s | BYOK: %v", userKey[:6], userReq.Model, usingOwnKey)
 
-	// 2. HYBRID CACHE LAYER 0 (REDIS)
+	// 2. HYBRID CACHE LAYER 0 (REDIS EXACT)
 	cleanMsg := strings.ToLower(strings.TrimSpace(userReq.Message))
 	msgHash := GenerateHash(cleanMsg)
 	
 	if redisClient != nil {
 		if cached, _ := redisClient.Get(ctx, "exact:"+msgHash).Result(); cached != "" {
-			log.Printf("🚀 [HIT] Redis match found! Serving instantly.")
+			log.Printf("🚀 [HIT] Redis match serving instantly.")
 			streamSimulatedResponse(w, cached)
 			
-			// Telemetry calculation for Cache Hit
 			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cached)
 			sav := CalculateSavings(userReq.Model, pT, rT)
 			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, sav, int(time.Since(startTime).Milliseconds()))
@@ -68,7 +67,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// --- 🐢 LOG: CACHE MISS ---
-	log.Printf("🐢 [MISS] No local match found for: %s", msgHash[:8])
+	log.Printf("🐢 [MISS] No local match found. Routing to provider...")
 
 	// 3. VECTOR DB SEARCH (LAYER 1)
 	vector, _ := GetEmbedding(userReq.Message, cfg.OpenAIKey)
@@ -93,19 +92,22 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	isGemini := strings.Contains(modelLower, "gemini")
 
 	if strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral") {
-		// GROQ
+		// GROQ ROUTE - Normalized for Browser Success
 		targetURL = "https://api.groq.com/openai/v1/chat/completions"
 		targetKey = cfg.GroqKey
 		if userGroqKey != "" { targetKey = userGroqKey }
-		payloadBytes, _ = json.Marshal(StreamRequestPayload{Model: userReq.Model, Messages: []Message{{Role: "user", Content: userReq.Message}}, Stream: true})
-		log.Printf("🔀 [ROUTING] Groq Infrastructure")
+
+		// Use modern stable model ID
+		groqModel := "llama-3.3-70b-versatile"
+		payloadBytes, _ = json.Marshal(StreamRequestPayload{Model: groqModel, Messages: []Message{{Role: "user", Content: userReq.Message}}, Stream: true})
+		log.Printf("🔀 [ROUTING] Groq Bridge -> %s", groqModel)
 
 	} else if isGemini {
-		// ADAPTIVE GEMINI
+		// ADAPTIVE GEMINI ROUTE
 		keyToUse := cfg.GeminiKey
 		if userGeminiKey != "" { keyToUse = userGeminiKey }
 		
-		modelID := "gemini-1.5-flash" // Default
+		modelID := "gemini-1.5-flash" 
 		if cached, ok := discoveredModelMap.Load(keyToUse); ok {
 			modelID = cached.(string)
 			log.Printf("📌 [PINNED] Using discovered model: %s", modelID)
@@ -117,12 +119,12 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🛰️ [ROUTING] Gemini Native Bridge")
 
 	} else {
-		// OPENAI
+		// OPENAI ROUTE
 		targetURL = "https://api.openai.com/v1/chat/completions"
 		targetKey = cfg.OpenAIKey
 		if userOpenAIKey != "" { targetKey = userOpenAIKey }
 		payloadBytes, _ = json.Marshal(StreamRequestPayload{Model: userReq.Model, Messages: []Message{{Role: "user", Content: userReq.Message}}, Stream: true})
-		log.Printf("🔀 [ROUTING] OpenAI Infrastructure")
+		log.Printf("🔀 [ROUTING] OpenAI Bridge")
 	}
 
 	// 5. EXECUTE PROVIDER HANDSHAKE
@@ -149,13 +151,13 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil || resp.StatusCode != 200 {
 		errorBody, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ [PROVIDER ERROR] Status: %d | Body: %s", resp.StatusCode, string(errorBody))
-		fmt.Fprintf(w, "data: {\"error\": \"Handshake Failed\", \"details\": %s}\n\n", string(errorBody))
+		fmt.Fprintf(w, "data: {\"error\": \"Inference failed\", \"details\": %s}\n\n", string(errorBody))
 		return
 	}
 	defer resp.Body.Close()
-	log.Printf("📡 [STREAM] Provider Connected. Piping data...")
+	log.Printf("📡 [STREAM] Handshake success. Piping data...")
 
-	// 6. UNIFIED STREAM PARSER WITH PACING & HANG FIX
+	// --- 6. UNIFIED STREAM PARSER WITH PACING & HANG FIX ---
 	reader := bufio.NewReader(resp.Body)
 	var fullResponseBuilder strings.Builder
 	for {
@@ -166,7 +168,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(lineStr, "data: ") {
 			cleanLine := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
 			
-			// 🚀 THE HANG FIX: break the loop on [DONE] instead of continuing
+			// 🚀 THE HANG FIX: Break on [DONE] signal
 			if cleanLine == "[DONE]" { 
 				fmt.Fprintf(w, "data: [DONE]\n\n")
 				w.(http.Flusher).Flush()
@@ -203,10 +205,9 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 					fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
 					w.(http.Flusher).Flush()
 
-					// Only apply pacing for large multi-word dumps (Gemini case)
-					// OpenAI word-by-word chunks will have len(words) == 1, bypassing Sleep
+					// Pacing delay: 5ms for large dumps (Gemini), 0ms for word-by-word (OpenAI)
 					if len(words) > 1 {
-						time.Sleep(15 * time.Millisecond)
+						time.Sleep(5 * time.Millisecond)
 					}
 				}
 			}
@@ -219,7 +220,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
 	if finalText != "" {
 		go func() {
-			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(finalText)
+			pT, cT := len(userReq.Message)/4, len(finalText)/4
 			latency := int(time.Since(startTime).Milliseconds())
 			
 			log.Printf("📊 [LEDGER] Telemetry: %d tokens | %dms latency", pT+cT, latency)
@@ -231,7 +232,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, finalText, 24*time.Hour) }
 			if vector != nil && cfg.PineconeKey != "" { SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, msgHash, vector, finalText) }
 			
-			// Log telemetry to Supabase (Savings = 0 on Cache Miss)
 			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency)
 		}()
 	}
@@ -272,7 +272,7 @@ func streamSimulatedResponse(w http.ResponseWriter, text string) {
 		jsonChunk, _ := json.Marshal(formatted)
 		fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
 		w.(http.Flusher).Flush()
-		time.Sleep(15 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 }
