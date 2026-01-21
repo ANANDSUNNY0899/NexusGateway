@@ -17,10 +17,25 @@ func InitializeDB(connString string) {
 	log.Println("✅ DB Connected")
 }
 
-func LogRequest(apiKey string, model string, status int, isHit bool, pTokens int, cTokens int, savings float64, latency int) {
-	query := `INSERT INTO request_logs (api_key, model, status, is_cache_hit, prompt_tokens, completion_tokens, cost_saved, provider_latency_ms) 
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
-	go db.Exec(context.Background(), query, apiKey, model, status, isHit, pTokens, cTokens, savings, latency)
+// Inside handler/db.go
+
+func LogRequest(apiKey string, model string, status int, isHit bool, pTokens int, cTokens int, savings float64, latency int, prompt string, response string) {
+	if db == nil { return }
+
+	query := `
+		INSERT INTO request_logs 
+		(api_key, model, status, is_cache_hit, prompt_tokens, completion_tokens, cost_saved, provider_latency_ms, prompt_text, response_text) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`
+
+	go func() {
+		_, err := db.Exec(context.Background(), query, 
+			apiKey, model, status, isHit, pTokens, cTokens, savings, latency, prompt, response,
+		)
+		if err != nil {
+			log.Printf("🚨 Telemetry Logging Failed: %v", err)
+		}
+	}()
 }
 
 func ValidateAPIKey(apiKey string) bool {

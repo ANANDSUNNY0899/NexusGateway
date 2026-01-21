@@ -17,6 +17,8 @@ type LogEntry struct {
 	IsCache   bool      `json:"is_cache_hit"`
 	Savings   float64   `json:"cost_saved"`
 	Latency   int       `json:"provider_latency_ms"`
+	Prompt    string    `json:"prompt_text"` 
+	Response  string    `json:"response_text"` 
 	CreatedAt time.Time `json:"created_at"`
 }
 

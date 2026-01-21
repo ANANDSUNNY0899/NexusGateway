@@ -232,7 +232,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, finalText, 24*time.Hour) }
 			if vector != nil && cfg.PineconeKey != "" { SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, msgHash, vector, finalText) }
 			
-			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency)
+			// 🚀 THE X-RAY LOG: Now sending actual text payload
+			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency, userReq.Message, finalText)
 		}()
 	}
 }
