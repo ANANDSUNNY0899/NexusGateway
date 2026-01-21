@@ -11,21 +11,35 @@ type OpenAIAdapter struct{}
 
 func (o *OpenAIAdapter) PrepareRequest(p, m, k string) (*http.Request, error) {
 	url := "https://api.openai.com/v1/chat/completions"
+	modelID := m
+
+	// 🚀 GROQ AUTO-MAPPER: Purane models ko naye models par map karna
 	if strings.Contains(strings.ToLower(m), "llama") || strings.Contains(strings.ToLower(m), "mixtral") {
 		url = "https://api.groq.com/openai/v1/chat/completions"
+		if strings.Contains(strings.ToLower(m), "llama") {
+			modelID = "llama-3.3-70b-versatile" // Groq ka current stable model
+		}
 	}
-	payload := StreamRequestPayload{Model: m, Messages: []Message{{Role: "user", Content: p}}, Stream: true}
+
+	payload := StreamRequestPayload{
+		Model:    modelID,
+		Messages: []Message{{Role: "user", Content: p}},
+		Stream:   true,
+	}
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil { return nil, err }
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+k)
 	return req, nil
 }
 
+// Baki functions (ParseStreamChunk, GetPricing) same rahenge
 func (o *OpenAIAdapter) ParseStreamChunk(line string) (string, bool) {
 	if !strings.HasPrefix(line, "data: ") { return "", false }
 	cleanLine := strings.TrimPrefix(line, "data: ")
-	if strings.TrimSpace(cleanLine) == "[DONE]" { return "", true }
+	if strings.TrimSpace(cleanLine) == "[DONE]" { return "", true } // End the stream
 	var chunk struct {
 		Choices []struct { Delta struct { Content string `json:"content"` } `json:"delta"` } `json:"choices"`
 	}
