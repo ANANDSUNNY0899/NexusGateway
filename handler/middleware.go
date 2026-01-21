@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
@@ -8,65 +9,47 @@ import (
 	"time"
 )
 
-// 1. AUTH MIDDLEWARE
+// Helper to send standardized JSON errors
+func respondWithError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// 1. AUTH MIDDLEWARE: Security & Quota Gate
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// A. Get Key
-		authHeader := r.Header.Get("Authorization")
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		token = strings.TrimSpace(token)
-
-		if token == "" {
-			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if token == "" || !ValidateAPIKey(token) {
+			respondWithError(w, "Unauthorized: Invalid Nexus API Key", http.StatusUnauthorized)
 			return
 		}
 
-		// B. Validate Nexus API Key
-		if !ValidateAPIKey(token) {
-			http.Error(w, "Invalid API Key", http.StatusUnauthorized)
-			return
-		}
-
-		// --- EXEMPTIONS ---
-		// 1. If they are trying to pay, let them through!
-		if r.URL.Path == "/api/checkout" {
+		// Exempt system routes
+		if r.URL.Path == "/api/checkout" || r.URL.Path == "/api/stats" {
 			next(w, r)
 			return
 		}
 
-		// 2. BYOK BYPASS (If they provide ANY provider key, they bypass our quota)
-		userOwnOpenAI := r.Header.Get("x-nexus-openai-key")
-		userOwnGroq := r.Header.Get("x-nexus-groq-key")
-		userOwnGemini := r.Header.Get("x-nexus-gemini-key")
-
-		if userOwnOpenAI != "" || userOwnGroq != "" || userOwnGemini != "" {
-			// They are paying the provider directly. We only provide the Caching/Intelligence.
+		// BYOK Bypass (OpenAI, Groq, Gemini)
+		if r.Header.Get("x-nexus-openai-key") != "" || r.Header.Get("x-nexus-groq-key") != "" || r.Header.Get("x-nexus-gemini-key") != "" {
 			next(w, r)
 			return
 		}
 
-		// C. Check Quota (Only for users using Nexus Credits)
+		// Standard Quota Check
 		allowed, err := CheckUserLimit(token)
-		if err != nil {
-			log.Printf("DB Error: %v", err)
-			http.Error(w, "Server Error", http.StatusInternalServerError)
-			return
-		}
-		
-		if !allowed {
-			http.Error(w, "402 - Quota Exceeded. Upgrade your plan or provide a BYOK key.", http.StatusPaymentRequired)
+		if err != nil || !allowed {
+			respondWithError(w, "402 Payment Required: Nexus Credits Depleted", http.StatusPaymentRequired)
 			return
 		}
 
-		// D. Increment Usage (Only if NOT using BYOK)
 		IncrementUsage(token)
-
-		// E. Pass
 		next(w, r)
 	}
 }
 
-// 2. RATE LIMIT MIDDLEWARE
+// 2. RATE LIMIT MIDDLEWARE: DDoS Protection (The Missing Function)
 func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -74,42 +57,37 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			ip = r.RemoteAddr
 		}
 
-		key := "rate:" + ip
-		limit := 20 // Increased for better UX
-
 		client := GetClient()
-		if client != nil {
-			// Use r.Context() for better request lifecycle management
-			count, err := client.Incr(r.Context(), key).Result()
-			if err != nil {
-				next(w, r)
-				return
-			}
-
-			if count == 1 {
-				client.Expire(r.Context(), key, 1*time.Minute)
-			}
-
-			if count > int64(limit) {
-				log.Printf("🚫 BLOCKED IP: %s", ip)
-				http.Error(w, "429 - Too Many Requests", http.StatusTooManyRequests)
-				return
-			}
+		if client == nil {
+			next(w, r) // If Redis is down, allow but log
+			return
 		}
+
+		key := "ratelimit:" + ip
+		limit := 30 // Allow 30 requests per minute per IP
+
+		count, err := client.Incr(r.Context(), key).Result()
+		if err == nil && count == 1 {
+			client.Expire(r.Context(), key, 1*time.Minute)
+		}
+
+		if count > int64(limit) {
+			log.Printf("🚫 RATE LIMIT: Blocked IP %s", ip)
+			respondWithError(w, "Too many requests. Slow down.", http.StatusTooManyRequests)
+			return
+		}
+
 		next(w, r)
 	}
 }
 
-// 3. CORS MIDDLEWARE (The Frontend Fix)
+// 3. CORS MIDDLEWARE: Browser Security
 func CORSMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-		
-		// CRITICAL FIX: Added x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key")
 
-		// Handle Preflight
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return

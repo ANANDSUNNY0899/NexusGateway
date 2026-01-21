@@ -3,104 +3,38 @@ package handler
 import (
 	"context"
 	"log"
-
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool" // <--- New Import
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Global Pool Variable
-var db *pgxpool.Pool // <--- Changed from *pgx.Conn to *pgxpool.Pool
+var db *pgxpool.Pool
 
 func InitializeDB(connString string) {
-	// Parse Config
-	config, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		log.Fatalf("❌ Invalid DB URL: %v", err)
-	}
-
-	// Pool Settings (Handle Concurrency)
-	config.MaxConns = 20
-	config.MinConns = 2
-	
-	// Force Simple Protocol (Fixes Supabase Error)
+	config, _ := pgxpool.ParseConfig(connString)
+	config.MaxConns = 25
 	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	db, _ = pgxpool.NewWithConfig(context.Background(), config)
+	log.Println("✅ DB Connected")
+}
 
-	// Connect
-	db, err = pgxpool.NewWithConfig(context.Background(), config)
-	if err != nil {
-		log.Fatalf("❌ Unable to connect to database: %v", err)
-	}
-	log.Println("✅ Connected to Supabase (Connection Pool)")
+func LogRequest(apiKey string, model string, status int, isHit bool, pTokens int, cTokens int, savings float64, latency int) {
+	query := `INSERT INTO request_logs (api_key, model, status, is_cache_hit, prompt_tokens, completion_tokens, cost_saved, provider_latency_ms) 
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	go db.Exec(context.Background(), query, apiKey, model, status, isHit, pTokens, cTokens, savings, latency)
 }
 
 func ValidateAPIKey(apiKey string) bool {
-	if db == nil {
-		log.Println("❌ CRITICAL: DB IS NIL")
-		return false
-	}
 	var exists bool
-	err := db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM users WHERE api_key=$1)", apiKey).Scan(&exists)
-	
-	if err != nil {
-		log.Printf("❌ DB Validation Error: %v", err)
-		return false
-	}
+	db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM users WHERE api_key=$1)", apiKey).Scan(&exists)
 	return exists
 }
 
-// ... (Keep CheckUserLimit, IncrementUsage, UpgradeUser as is) ...
-
-// <--- NEW FUNCTIONS START HERE --->
-
-// CheckUserLimit returns true if usage < limit
 func CheckUserLimit(apiKey string) (bool, error) {
-	if db == nil { return false, nil }
-
-	var used int
-	var limit int
-
-	// Get current usage and limit
-	query := `SELECT requests_used, request_limit FROM users WHERE api_key=$1`
-	err := db.QueryRow(context.Background(), query, apiKey).Scan(&used, &limit)
-	if err != nil {
-		return false, err
-	}
-
-	// If used >= limit, BLOCK THEM
-	if used >= limit {
-		return false, nil
-	}
-
-	return true, nil
+	var used, limit int
+	err := db.QueryRow(context.Background(), "SELECT requests_used, request_limit FROM users WHERE api_key=$1", apiKey).Scan(&used, &limit)
+	return used < limit, err
 }
 
-// IncrementUsage adds +1 to the user's meter
 func IncrementUsage(apiKey string) {
-	if db == nil { return }
-
-	// Run in background (goroutine) so we don't slow down the user
-	go func() {
-		_, err := db.Exec(context.Background(), "UPDATE users SET requests_used = requests_used + 1 WHERE api_key=$1", apiKey)
-		if err != nil {
-			log.Printf("Failed to update usage: %v", err)
-		}
-	}()
-}
-
-
-// UpgradeUser boosts the limit to 10,000
-func UpgradeUser(apiKey string) error {
-	if db == nil { return nil }
-
-	// Set limit to 10,000 AND reset their usage to 0 (Fresh start)
-	query := `UPDATE users SET request_limit = 10000, requests_used = 0 WHERE api_key=$1`
-	_, err := db.Exec(context.Background(), query, apiKey)
-	
-	if err != nil {
-		log.Printf("❌ Failed to upgrade user: %v", err)
-		return err
-	}
-	
-	log.Printf("🎉 User Upgraded: %s", apiKey)
-	return nil
+	go db.Exec(context.Background(), "UPDATE users SET requests_used = requests_used + 1 WHERE api_key=$1", apiKey)
 }

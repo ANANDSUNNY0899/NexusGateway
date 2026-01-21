@@ -9,33 +9,36 @@ import (
 	"time"
 )
 
+// LogEntry represents the telemetry data for the Trace Inspector
 type LogEntry struct {
 	ID        string    `json:"id"`
 	Model     string    `json:"model"`
 	Status    int       `json:"status"`
 	IsCache   bool      `json:"is_cache_hit"`
+	Savings   float64   `json:"cost_saved"`
+	Latency   int       `json:"provider_latency_ms"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 func HandleGetLogs(w http.ResponseWriter, r *http.Request) {
-	// 1. Auth Check (Only the user can see their logs)
+	// 1. IDENTITY CAPTURE
 	authHeader := r.Header.Get("Authorization")
-	apiKey := strings.TrimPrefix(authHeader, "Bearer ")
-	apiKey = strings.TrimSpace(apiKey)
+	apiKey := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 
 	if apiKey == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		respondWithError(w, "Unauthorized: API Key missing", http.StatusUnauthorized)
 		return
 	}
 
 	if db == nil {
-		http.Error(w, "Database not connected", http.StatusServiceUnavailable)
+		respondWithError(w, "Infrastructure Error: DB not connected", http.StatusServiceUnavailable)
 		return
 	}
 
-	// 2. Query Postgres (Last 50 logs for this key)
+	// 2. TELEMETRY QUERY (Last 50 traces)
+	// Humne isme cost_saved aur provider_latency_ms add kiya hai
 	query := `
-		SELECT id, model, status, is_cache_hit, created_at 
+		SELECT id, model, status, is_cache_hit, cost_saved, provider_latency_ms, created_at 
 		FROM request_logs 
 		WHERE api_key = $1 
 		ORDER BY created_at DESC 
@@ -44,8 +47,8 @@ func HandleGetLogs(w http.ResponseWriter, r *http.Request) {
 	
 	rows, err := db.Query(context.Background(), query, apiKey)
 	if err != nil {
-		log.Printf("Log Query Error: %v", err)
-		http.Error(w, "DB Error", http.StatusInternalServerError)
+		log.Printf("🚨 Trace Query Error: %v", err)
+		respondWithError(w, "Analytics Retrieval Failed", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -53,13 +56,25 @@ func HandleGetLogs(w http.ResponseWriter, r *http.Request) {
 	logs := []LogEntry{}
 	for rows.Next() {
 		var l LogEntry
-		if err := rows.Scan(&l.ID, &l.Model, &l.Status, &l.IsCache, &l.CreatedAt); err != nil {
+		err := rows.Scan(
+			&l.ID, 
+			&l.Model, 
+			&l.Status, 
+			&l.IsCache, 
+			&l.Savings, 
+			&l.Latency, 
+			&l.CreatedAt,
+		)
+		if err != nil {
+			log.Printf("⚠️  Row Scan Error: %v", err)
 			continue
 		}
 		logs = append(logs, l)
 	}
 
-	// 3. Return JSON
+	// 3. RETURN ENCRYPTED TELEMETRY JSON
 	w.Header().Set("Content-Type", "application/json")
+	// Cache control taaki dashboard fast load ho but logs real-time rahein
+	w.Header().Set("Cache-Control", "private, max-age=5") 
 	json.NewEncoder(w).Encode(logs)
 }

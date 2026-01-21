@@ -1,428 +1,134 @@
-// package handler
-
-// import (
-// 	"NexusGateway/config"
-// 	"context"
-// 	"crypto/sha256"
-// 	"encoding/hex"
-// 	"encoding/json"
-// 	"log"
-// 	"net/http"
-// 	"strings" // Added strings package
-// )
-
-// // Request Structure
-// type ChatRequest struct {
-// 	Message string `json:"message"`
-// 	Model   string `json:"model"`
-// }
-
-// // Helper: Extract Key from Header
-// // func getAPIKey(r *http.Request) string {
-// // 	authHeader := r.Header.Get("Authorization")
-// // 	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-// // }
-
-
-// // Helper: Extract Key from Header safely
-// func getAPIKey(r *http.Request) string {
-// 	authHeader := r.Header.Get("Authorization")
-// 	// If empty, return empty string (don't crash)
-// 	if authHeader == "" {
-// 		return ""
-// 	}
-// 	// Split by space ("Bearer", "KEY") and take the second part
-// 	parts := strings.Split(authHeader, " ")
-// 	if len(parts) == 2 {
-// 		return strings.TrimSpace(parts[1])
-// 	}
-// 	return ""
-// }
-
-
-
-// func GenerateHash(input string) string {
-// 	hash := sha256.New()
-// 	hash.Write([]byte(input))
-// 	return hex.EncodeToString(hash.Sum(nil))
-// }
-
-// func HandleChat(w http.ResponseWriter, r *http.Request) {
-// 	cfg := config.LoadConfig()
-// 	ctx := context.Background()
-// 	userKey := getAPIKey(r) // Get the key for logging
-
-// 	// 1. Parse Request
-// 	var userReq ChatRequest
-// 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-// 		http.Error(w, "Invalid request body", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	if userReq.Model == "" {
-// 		userReq.Model = "gpt-3.5-turbo"
-// 	}
-
-// 	// 2. Generate Embedding
-// 	log.Println("🧠 Generating Embedding...")
-// 	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
-// 	if err != nil {
-// 		log.Printf("Embedding Warning: %v", err)
-// 	}
-
-// 	// 3. SEMANTIC SEARCH (Cache Hit)
-// 	if vector != nil && cfg.PineconeKey != "" {
-// 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-// 		if err == nil {
-// 			log.Printf("🔍 Similarity Score: %.2f", score)
-			
-// 			if score > 0.85 {
-// 				log.Println("⚡ SEMANTIC HIT: Serving from Pinecone")
-				
-// 				client := GetClient()
-// 				if client != nil { client.Incr(ctx, "stats:cache_hits") }
-
-// 				// --- LOGGING (HIT) ---
-// 				LogRequest(userKey, userReq.Model, 200, true)
-// 				// ---------------------
-
-// 				w.Header().Set("Content-Type", "application/json")
-// 				json.NewEncoder(w).Encode(map[string]any{
-// 					"choices": []map[string]any{
-// 						{ "message": map[string]string{ "content": cachedAnswer } },
-// 					},
-// 				})
-// 				return
-// 			}
-// 		}
-// 	}
-
-// 	// 4. ROUTER (Cache Miss)
-// 	log.Printf("🐢 CACHE MISS: Routing request to %s...", userReq.Model)
-	
-// 	client := GetClient()
-// 	if client != nil { client.Incr(ctx, "stats:cache_misses") }
-
-// 	provider, err := GetProvider(userReq.Model, cfg.OpenAIKey, cfg.AnthropicKey)
-// 	if err != nil {
-// 		http.Error(w, "Invalid Model", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	responseText, err := provider.Send(userReq.Message)
-// 	if err != nil {
-// 		log.Printf("Provider Error: %v", err)
-		
-// 		// --- LOGGING (ERROR) ---
-// 		LogRequest(userKey, userReq.Model, 500, false)
-// 		// -----------------------
-
-// 		http.Error(w, "AI Provider Error: "+err.Error(), http.StatusBadGateway)
-// 		return
-// 	}
-
-// 	// 5. Save to Pinecone
-// 	if vector != nil && cfg.PineconeKey != "" {
-// 		id := GenerateHash(userReq.Message)
-// 		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, responseText)
-// 	}
-
-// 	// --- LOGGING (MISS / SUCCESS) ---
-// 	LogRequest(userKey, userReq.Model, 200, false)
-// 	// --------------------------------
-
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(map[string]any{
-// 		"choices": []map[string]any{
-// 			{ "message": map[string]string{ "content": responseText } },
-// 		},
-// 	})
-// }
-
-
-
-
-
-// package handler
-
-// import (
-// 	"NexusGateway/config"
-// 	"context"
-// 	"crypto/sha256"
-// 	"encoding/hex"
-// 	"encoding/json"
-// 	"log"
-// 	"net/http"
-// 	"strings"
-// )
-
-// type ChatRequest struct {
-// 	Message string `json:"message"`
-// 	Model   string `json:"model"`
-// }
-
-// // Helper: Extract Key from Header safely
-// func getAPIKey(r *http.Request) string {
-// 	authHeader := r.Header.Get("Authorization")
-// 	if authHeader == "" {
-// 		return ""
-// 	}
-// 	parts := strings.Split(authHeader, " ")
-// 	if len(parts) == 2 {
-// 		return strings.TrimSpace(parts[1])
-// 	}
-// 	return ""
-// }
-
-// func GenerateHash(input string) string {
-// 	hash := sha256.New()
-// 	hash.Write([]byte(input))
-// 	return hex.EncodeToString(hash.Sum(nil))
-// }
-
-// func HandleChat(w http.ResponseWriter, r *http.Request) {
-// 	cfg := config.LoadConfig()
-// 	ctx := context.Background()
-// 	userKey := getAPIKey(r) 
-
-// 	// 1. Increment Global Counter (Redis)
-// 	// This makes the "Total Requests" number go up immediately
-// 	client := GetClient()
-// 	if client != nil {
-// 		client.Incr(ctx, "stats:total_requests")
-// 	}
-
-// 	// 2. Parse User Request
-// 	var userReq ChatRequest
-// 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-// 		// Log Bad Request
-// 		LogRequest(userKey, "unknown", 400, false)
-// 		http.Error(w, "Invalid request body", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	if userReq.Model == "" {
-// 		userReq.Model = "gpt-3.5-turbo"
-// 	}
-
-// 	// 3. Generate Embedding (For Cache)
-// 	log.Println("🧠 Generating Embedding...")
-// 	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
-// 	if err != nil {
-// 		log.Printf("Embedding Warning: %v", err)
-// 	}
-
-// 	// 4. CHECK CACHE (Pinecone)
-// 	if vector != nil && cfg.PineconeKey != "" {
-// 		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-		
-// 		// If found (> 85% match)
-// 		if err == nil && score > 0.75 {
-// 			log.Println("⚡ SEMANTIC HIT")
-			
-// 			// Update Redis Hit Counter
-// 			if client != nil { client.Incr(ctx, "stats:cache_hits") }
-
-// 			// !!! CRITICAL: Log to Database !!!
-// 			LogRequest(userKey, userReq.Model, 200, true)
-
-// 			// Return Answer
-// 			w.Header().Set("Content-Type", "application/json")
-// 			json.NewEncoder(w).Encode(map[string]any{
-// 				"choices": []map[string]any{
-// 					{ "message": map[string]string{ "content": cachedAnswer } },
-// 				},
-// 			})
-// 			return // STOP HERE
-// 		}
-// 	}
-
-// 	// 5. CACHE MISS (Call AI Provider)
-// 	log.Printf("🐢 CACHE MISS: Routing to %s", userReq.Model)
-	
-// 	// Update Redis Miss Counter
-// 	if client != nil { client.Incr(ctx, "stats:cache_misses") }
-
-// 	provider, err := GetProvider(userReq.Model, cfg.OpenAIKey, cfg.AnthropicKey)
-// 	if err != nil {
-// 		// Log Internal Error
-// 		LogRequest(userKey, userReq.Model, 400, false)
-// 		http.Error(w, "Invalid Model Config", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	responseText, err := provider.Send(userReq.Message)
-// 	if err != nil {
-// 		log.Printf("Provider Error: %v", err)
-		
-// 		// !!! CRITICAL: Log the Error !!!
-// 		// This ensures your graph shows the failed attempt
-// 		LogRequest(userKey, userReq.Model, 500, false)
-
-// 		http.Error(w, "AI Provider Error: "+err.Error(), http.StatusBadGateway)
-// 		return
-// 	}
-
-// 	// 6. Save new answer to Pinecone
-// 	if vector != nil && cfg.PineconeKey != "" {
-// 		id := GenerateHash(userReq.Message)
-// 		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, responseText)
-// 	}
-
-// 	// !!! CRITICAL: Log the Success !!!
-// 	LogRequest(userKey, userReq.Model, 200, false)
-
-// 	// Return Answer
-// 	w.Header().Set("Content-Type", "application/json")
-// 	json.NewEncoder(w).Encode(map[string]any{
-// 		"choices": []map[string]any{
-// 			{ "message": map[string]string{ "content": responseText } },
-// 		},
-// 	})
-// }
-
-
-
-
-
-
 package handler
 
 import (
 	"NexusGateway/config"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
-type ChatRequest struct {
-	Message string `json:"message"`
-	Model   string `json:"model"`
-}
-
-func getAPIKey(r *http.Request) string {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" { return "" }
-	parts := strings.Split(authHeader, " ")
-	if len(parts) == 2 { return strings.TrimSpace(parts[1]) }
-	return ""
-}
-
-func GenerateHash(input string) string {
-	hash := sha256.New()
-	hash.Write([]byte(input))
-	return hex.EncodeToString(hash.Sum(nil))
-}
+// --- MAIN HANDLER (Non-Streaming) ---
 
 func HandleChat(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 	cfg := config.LoadConfig()
 	ctx := context.Background()
-	userKey := getAPIKey(r) 
+	userKey := getAPIKey(r)
+	redisClient := GetClient()
 
-	// --- LAYER 2: CHECK FOR USER KEYS (BYOK) ---
+	// 1. CAPTURE BYOK HEADERS
 	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
-	userAnthropicKey := r.Header.Get("x-nexus-anthropic-key")
+	userGroqKey := r.Header.Get("x-nexus-groq-key")
+	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
+	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "")
 
-	usingOwnKey := (userOpenAIKey != "" || userAnthropicKey != "")
-
-	// 1. Parse Request
+	// 2. PARSE REQUEST
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-		LogRequest(userKey, "unknown", 400, false)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0)
+		respondWithError(w, "Invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-
 	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
 
-	// --- LAYER 1: THE IRON DOME (Model Gating) ---
+	// 3. IRON DOME (MODEL GATE)
 	if !usingOwnKey {
-		if userReq.Model == "gpt-4" || userReq.Model == "gpt-4o" || strings.Contains(userReq.Model, "claude") {
-			http.Error(w, "403 - Premium Model. Please provide BYOK header or use 'gpt-3.5-turbo' / 'llama3-8b-8192'.", http.StatusForbidden)
+		if strings.Contains(userReq.Model, "gpt-4") || strings.Contains(userReq.Model, "claude-3") {
+			LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0)
+			respondWithError(w, "Premium Model Access Denied. Use BYOK or Upgrade.", http.StatusForbidden)
 			return
 		}
 	}
 
-	// 2. Prepare Keys Map
-	keys := map[string]string{
-		"openai":    cfg.OpenAIKey,
-		"anthropic": cfg.AnthropicKey,
-		"groq":      cfg.GroqKey,
-		"gemini":    cfg.GeminiKey,
-	}
+	// 4. HYBRID CACHE (Layer 0)
+	cleanMsg := strings.ToLower(strings.TrimSpace(userReq.Message))
+	msgHash := GenerateHash(cleanMsg)
+	
+	if redisClient != nil {
+		if cached, _ := redisClient.Get(ctx, "exact:"+msgHash).Result(); cached != "" {
+			log.Printf("🚀 CHAT CACHE HIT: %s", cleanMsg)
+			
+			pT := EstimateTokens(userReq.Message)
+			cT := EstimateTokens(cached)
+			sav := CalculateSavings(userReq.Model, pT, cT)
+			lat := int(time.Since(startTime).Milliseconds())
 
-	// Override with User Keys if provided
-	if userOpenAIKey != "" { keys["openai"] = userOpenAIKey }
-	if userAnthropicKey != "" { keys["anthropic"] = userAnthropicKey }
-
-	// 3. LOGGING (Counter)
-	client := GetClient()
-	if !usingOwnKey && client != nil {
-		client.Incr(ctx, "stats:total_requests")
-	}
-
-	// 4. Generate Embedding (Always use System Key for this)
-	log.Println("🧠 Generating Embedding...")
-	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
-	if err != nil {
-		log.Printf("Embedding Warning: %v", err)
-	}
-
-	// 5. CACHE HIT CHECK
-	if vector != nil && cfg.PineconeKey != "" {
-		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-		
-		if err == nil && score > 0.75 { 
-			log.Println("⚡ SEMANTIC HIT")
-			if !usingOwnKey && client != nil { client.Incr(ctx, "stats:cache_hits") }
-			LogRequest(userKey, userReq.Model, 200, true)
-
+			go LogRequest(userKey, userReq.Model, 200, true, pT, cT, sav, lat)
+			
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
-				"choices": []map[string]any{
-					{ "message": map[string]string{ "content": cachedAnswer } },
-				},
+				"choices": []map[string]any{{"message": map[string]string{"content": cached}}},
 			})
 			return
 		}
 	}
 
-	// 6. CACHE MISS (Call AI)
-	log.Printf("🐢 CACHE MISS: Routing to %s", userReq.Model)
-	if !usingOwnKey && client != nil { client.Incr(ctx, "stats:cache_misses") }
+	// 5. UNIVERSAL ROUTER
+	provider := GetProvider(userReq.Model)
 
-	// Use the New Provider Factory
-	provider, err := GetProvider(userReq.Model, keys)
-	if err != nil {
-		LogRequest(userKey, userReq.Model, 400, false)
-		http.Error(w, "Invalid Model Config", http.StatusBadRequest)
+	targetKey := cfg.OpenAIKey
+	if strings.Contains(userReq.Model, "gemini") { 
+		targetKey = cfg.GeminiKey
+		if userGeminiKey != "" { targetKey = userGeminiKey } 
+	} else if strings.Contains(userReq.Model, "llama") || strings.Contains(userReq.Model, "mixtral") {
+		targetKey = cfg.GroqKey
+		if userGroqKey != "" { targetKey = userGroqKey }
+	} else {
+		if userOpenAIKey != "" { targetKey = userOpenAIKey }
+	}
+
+	// 6. EXECUTE CALL
+	req, _ := provider.PrepareRequest(userReq.Message, userReq.Model, targetKey)
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	
+	if err != nil || resp.StatusCode != 200 {
+		LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0)
+		respondWithError(w, "AI Provider failure", http.StatusBadGateway)
 		return
 	}
+	defer resp.Body.Close()
 
-	responseText, err := provider.Send(userReq.Message)
-	if err != nil {
-		log.Printf("Provider Error: %v", err)
-		LogRequest(userKey, userReq.Model, 500, false)
-		http.Error(w, "AI Provider Error: "+err.Error(), http.StatusBadGateway)
-		return
+	// 7. PARSE FULL RESPONSE
+	body, _ := io.ReadAll(resp.Body)
+	var responseText string
+	
+	if strings.Contains(userReq.Model, "gemini") {
+		var gRes struct { Candidates []struct { Content struct { Parts []struct { Text string `json:"text"` } `json:"parts"` } `json:"content"` } `json:"candidates"` }
+		json.Unmarshal(body, &gRes)
+		if len(gRes.Candidates) > 0 { responseText = gRes.Candidates[0].Content.Parts[0].Text }
+	} else {
+		var oRes struct { Choices []struct { Message struct { Content string `json:"content"` } `json:"message"` } `json:"choices"` }
+		json.Unmarshal(body, &oRes)
+		if len(oRes.Choices) > 0 { responseText = oRes.Choices[0].Message.Content }
 	}
 
-	// 7. Save to Cache
-	if vector != nil && cfg.PineconeKey != "" {
-		id := GenerateHash(userReq.Message)
-		SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, id, vector, responseText)
+	// 8. TELEMETRY & BACKGROUND PERSISTENCE
+	if responseText != "" {
+		go func() {
+			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(responseText)
+			lat := int(time.Since(startTime).Milliseconds())
+			
+			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, responseText, 24*time.Hour) }
+			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, lat)
+		}()
 	}
 
-	LogRequest(userKey, userReq.Model, 200, false)
-
+	// 9. RETURN UNIFIED JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"choices": []map[string]any{
-			{ "message": map[string]string{ "content": responseText } },
-		},
+		"choices": []map[string]any{{"message": map[string]string{"content": responseText}}},
 	})
+}
+
+// --- HELPER ---
+func getAPIKey(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	parts := strings.Split(auth, " ")
+	if len(parts) == 2 { return parts[1] }
+	return ""
 }
