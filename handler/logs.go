@@ -40,14 +40,14 @@ func HandleGetLogs(w http.ResponseWriter, r *http.Request) {
 	// 2. TELEMETRY QUERY (Last 50 traces)
 	// Humne isme cost_saved aur provider_latency_ms add kiya hai
 	query := `
-		SELECT id, model, status, is_cache_hit, cost_saved, provider_latency_ms, created_at 
-		FROM request_logs 
-		WHERE api_key = $1 
-		ORDER BY created_at DESC 
-		LIMIT 50
-	`
-	
-	rows, err := db.Query(context.Background(), query, apiKey)
+        SELECT id, model, status, is_cache_hit, cost_saved, provider_latency_ms, prompt_text, response_text, triggered_rule, governance_action, created_at 
+        FROM request_logs 
+        WHERE api_key = $1 
+        ORDER BY created_at DESC 
+        LIMIT 50
+    `
+    
+    rows, err := db.Query(context.Background(), query, apiKey)
 	if err != nil {
 		log.Printf("🚨 Trace Query Error: %v", err)
 		respondWithError(w, "Analytics Retrieval Failed", http.StatusInternalServerError)
