@@ -17,23 +17,23 @@ func InitializeDB(connString string) {
 	log.Println("✅ DB Connected")
 }
 
-// Inside handler/db.go
-
-func LogRequest(apiKey string, model string, status int, isHit bool, pTokens int, cTokens int, savings float64, latency int, prompt string, response string) {
+// LogRequest captures technical, financial, and GOVERNANCE telemetry.
+func LogRequest(apiKey string, model string, status int, isHit bool, pTokens int, cTokens int, savings float64, latency int, prompt string, response string, ruleID string, action string) {
 	if db == nil { return }
 
+	// Humne triggered_rule aur governance_action columns add kiye hain
 	query := `
 		INSERT INTO request_logs 
-		(api_key, model, status, is_cache_hit, prompt_tokens, completion_tokens, cost_saved, provider_latency_ms, prompt_text, response_text) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		(api_key, model, status, is_cache_hit, prompt_tokens, completion_tokens, cost_saved, provider_latency_ms, prompt_text, response_text, triggered_rule, governance_action) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	go func() {
 		_, err := db.Exec(context.Background(), query, 
-			apiKey, model, status, isHit, pTokens, cTokens, savings, latency, prompt, response,
+			apiKey, model, status, isHit, pTokens, cTokens, savings, latency, prompt, response, ruleID, action,
 		)
 		if err != nil {
-			log.Printf("🚨 Telemetry Logging Failed: %v", err)
+			log.Printf("🚨 Sovereign Logging Failed: %v", err)
 		}
 	}()
 }

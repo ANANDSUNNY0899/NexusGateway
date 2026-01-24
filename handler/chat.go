@@ -29,18 +29,42 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// 2. PARSE REQUEST
 	var userReq ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-		// FIX 1: Added "", ""
-		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "")
+		// 🚀 LOG: 12 Arguments (Error Case)
+		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
 		respondWithError(w, "Invalid JSON payload", http.StatusBadRequest)
 		return
 	}
 	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
 
+	// --- 🏛️ PHASE 1: SOVEREIGN GOVERNANCE ---
+	gov := EvaluateConstitution(userReq.Message)
+	
+	if !gov.Allowed {
+		log.Printf("🚫 [CHAT REFUSAL] Constitution Blocked: %s", gov.RuleID)
+		// 🚀 LOG: 12 Arguments (BLOCKED Case)
+		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, gov.RefusalMsg, gov.RuleID, "BLOCKED")
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": gov.RefusalMsg}}},
+		})
+		return
+	}
+
+	// Apply Redaction if any
+	originalMsg := userReq.Message
+	userReq.Message = gov.ModifiedText
+	govAction := "PERMITTED"
+	triggeredRule := "NONE"
+	if originalMsg != gov.ModifiedText {
+		govAction = "REDACTED"
+		triggeredRule = gov.RuleID
+	}
+
 	// 3. IRON DOME (MODEL GATE)
 	if !usingOwnKey {
 		if strings.Contains(userReq.Model, "gpt-4") || strings.Contains(userReq.Model, "claude-3") {
-			// FIX 2: Added userReq.Message, ""
-			LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, "")
+			LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, "Premium Blocked", "NONE", "FAILED")
 			respondWithError(w, "Premium Model Access Denied", http.StatusForbidden)
 			return
 		}
@@ -49,40 +73,33 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// 4. HYBRID CACHE (Layer 0)
 	cleanMsg := strings.ToLower(strings.TrimSpace(userReq.Message))
 	msgHash := GenerateHash(cleanMsg)
-	
 	if redisClient != nil {
 		if cached, _ := redisClient.Get(ctx, "exact:"+msgHash).Result(); cached != "" {
-			log.Printf("🚀 CHAT CACHE HIT: %s", cleanMsg)
+			log.Printf("🚀 [CHAT HIT] Redis")
 			
-			pT := EstimateTokens(userReq.Message)
-			cT := EstimateTokens(cached)
+			// Handle potential disclaimer for cached response
+			responseText := cached
+			if gov.Disclaimer != "" { responseText += gov.Disclaimer }
+
+			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(responseText)
 			sav := CalculateSavings(userReq.Model, pT, cT)
 			lat := int(time.Since(startTime).Milliseconds())
 
-			// FIX 3: Added userReq.Message, cached
-			go LogRequest(userKey, userReq.Model, 200, true, pT, cT, sav, lat, userReq.Message, cached)
+			// 🚀 LOG: 12 Arguments (HIT Case)
+			go LogRequest(userKey, userReq.Model, 200, true, pT, cT, sav, lat, userReq.Message, responseText, triggeredRule, govAction)
 			
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
-				"choices": []map[string]any{{"message": map[string]string{"content": cached}}},
-			})
+			json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": responseText}}}})
 			return
 		}
 	}
 
-	// 5. UNIVERSAL ROUTER
+	// 5. UNIVERSAL ROUTER (Via Factory)
 	provider := GetProvider(userReq.Model)
-
 	targetKey := cfg.OpenAIKey
-	if strings.Contains(userReq.Model, "gemini") { 
-		targetKey = cfg.GeminiKey
-		if userGeminiKey != "" { targetKey = userGeminiKey } 
-	} else if strings.Contains(userReq.Model, "llama") || strings.Contains(userReq.Model, "mixtral") {
-		targetKey = cfg.GroqKey
-		if userGroqKey != "" { targetKey = userGroqKey }
-	} else {
-		if userOpenAIKey != "" { targetKey = userOpenAIKey }
-	}
+	if strings.Contains(userReq.Model, "gemini") { targetKey = cfg.GeminiKey; if userGeminiKey != "" { targetKey = userGeminiKey } 
+	} else if strings.Contains(userReq.Model, "llama") { targetKey = cfg.GroqKey; if userGroqKey != "" { targetKey = userGroqKey } 
+	} else if userOpenAIKey != "" { targetKey = userOpenAIKey }
 
 	// 6. EXECUTE CALL
 	req, _ := provider.PrepareRequest(userReq.Message, userReq.Model, targetKey)
@@ -90,17 +107,15 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	resp, err := client.Do(req)
 	
 	if err != nil || resp.StatusCode != 200 {
-		// FIX 4: Added userReq.Message, ""
-		LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, "")
+		LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, "Provider Fail", "NONE", "FAILED")
 		respondWithError(w, "AI Provider failure", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 
-	// 7. PARSE FULL RESPONSE
+	// 7. PARSE RESPONSE
 	body, _ := io.ReadAll(resp.Body)
 	var responseText string
-	
 	if strings.Contains(userReq.Model, "gemini") {
 		var gRes struct { Candidates []struct { Content struct { Parts []struct { Text string `json:"text"` } `json:"parts"` } `json:"content"` } `json:"candidates"` }
 		json.Unmarshal(body, &gRes)
@@ -111,23 +126,22 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		if len(oRes.Choices) > 0 { responseText = oRes.Choices[0].Message.Content }
 	}
 
-	// 8. TELEMETRY & BACKGROUND PERSISTENCE
+	// 8. TELEMETRY & DISCLAIMER
 	if responseText != "" {
+		if gov.Disclaimer != "" { responseText += gov.Disclaimer }
+
 		go func() {
 			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(responseText)
 			lat := int(time.Since(startTime).Milliseconds())
-			
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, responseText, 24*time.Hour) }
-			// FIX 5: Added userReq.Message, responseText
-			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, lat, userReq.Message, responseText)
+			// 🚀 LOG: 12 Arguments (SUCCESS Case)
+			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, lat, userReq.Message, responseText, triggeredRule, govAction)
 		}()
 	}
 
-	// 9. RETURN UNIFIED JSON
+	// 9. RETURN JSON
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"choices": []map[string]any{{"message": map[string]string{"content": responseText}}},
-	})
+	json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": responseText}}}})
 }
 
 // --- HELPER ---

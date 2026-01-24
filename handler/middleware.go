@@ -82,12 +82,15 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // 3. CORS MIDDLEWARE: Browser Security
+
+
 func CORSMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 		
-        w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key")
+		// 🚀 THE FIX: Add x-nexus-gemini-key and x-nexus-groq-key
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
