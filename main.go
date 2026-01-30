@@ -13,12 +13,6 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 
-    // // <--- DEBUGGING START: LOOK AT THESE LOGS IN TERMINAL --->
-    // log.Printf("--------------------------------------------------")
-    // log.Printf("DEBUG CHECK OpenAI Key:    [%s]", cfg.OpenAIKey)
-    // log.Printf("DEBUG CHECK Anthropic Key: [%s]", cfg.AnthropicKey)
-    // log.Printf("--------------------------------------------------")
-    // // <--- DEBUGGING END --->
 
 	// 1. Initialize Redis
 	if cfg.RedisURL != "" {
@@ -62,6 +56,8 @@ func main() {
     protectedCheckout := handler.AuthMiddleware(handler.HandleCheckout)
 	http.HandleFunc("/api/checkout", handler.CORSMiddleware(protectedCheckout))
 
+	http.HandleFunc("/api/user/usage", handler.CORSMiddleware(handler.AuthMiddleware(handler.HandleUserUsage)))
+	
 	// 5. Start Server
 	log.Printf("🚀 Nexus Gateway V2 (Simple Mode) running on port %s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, nil); err != nil {

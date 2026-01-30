@@ -80,3 +80,17 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=10") // Reduce DB load
 	json.NewEncoder(w).Encode(response)
 }
+
+// To handle individual user usage
+func HandleUserUsage(w http.ResponseWriter, r *http.Request) {
+    token := getAPIKey(r)
+    var used, limit int
+    
+    // Fetch from Supabase
+    db.QueryRow(r.Context(), "SELECT requests_used, request_limit FROM users WHERE api_key=$1", token).Scan(&used, &limit)
+    
+    json.NewEncoder(w).Encode(map[string]any{
+        "used": used,
+        "limit": limit,
+    })
+}
