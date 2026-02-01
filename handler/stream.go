@@ -214,6 +214,8 @@
 
 
 
+
+
 package handler
 
 import (
@@ -250,7 +252,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
 	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "")
 
-	// 🚀 PROFESSIONAL HEADERS: Disable all buffering for SSE
+	// SSE Headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no") 
 	w.Header().Set("Cache-Control", "no-cache")
@@ -267,11 +269,22 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	// --- 🏛️ PHASE 1: SOVEREIGN GOVERNANCE ---
 	gov := EvaluateConstitution(userReq.Message)
 	if !gov.Allowed {
+		log.Printf("🚫 [REFUSAL] Constitution Blocked: %s", gov.RuleID)
 		streamSimulatedResponse(w, gov.RefusalMsg)
 		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, gov.RefusalMsg, gov.RuleID, "BLOCKED")
 		return
 	}
 
+	// 🛡️ IRON DOME: PREMIUM MODEL GATE
+	if !usingOwnKey && (strings.Contains(userReq.Model, "gpt-4") || strings.Contains(userReq.Model, "claude-3")) {
+		log.Printf("🛡️ [IRON DOME] Blocking premium model")
+		msg := "Premium Model Locked. Use BYOK or Upgrade."
+		streamSimulatedResponse(w, msg)
+		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, msg, "IRON_DOME", "BLOCKED")
+		return
+	}
+
+	// Governance Setup for Logs
 	userReq.Message = gov.ModifiedText
 	govAction := "PERMITTED"
 	triggeredRule := "NONE"
@@ -290,13 +303,31 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 			log.Printf("🚀 [HIT] Redis serving instantly.")
 			streamSimulatedResponse(w, cached)
 			if gov.Disclaimer != "" { streamSimulatedResponse(w, gov.Disclaimer) }
+			
 			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cached)
 			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, CalculateSavings(userReq.Model, pT, rT), int(time.Since(startTime).Milliseconds()), userReq.Message, cached, triggeredRule, govAction)
 			return
 		}
 	}
 
-	// --- 3. UNIVERSAL ROUTER (NATIVE BRIDGE) ---
+	log.Printf("🐢 [MISS] No local match found for: %s. Checking Semantic Cache...", msgHash[:8])
+
+	// --- 3. VECTOR DB SEARCH (LAYER 1) ---
+	vector, _ := GetEmbedding(userReq.Message, cfg.OpenAIKey)
+	if vector != nil && cfg.PineconeKey != "" {
+		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
+		if err == nil && score > 0.75 {
+			log.Printf("⚡ [PINECONE HIT] Score: %.2f", score)
+			streamSimulatedResponse(w, cachedAnswer)
+			if gov.Disclaimer != "" { streamSimulatedResponse(w, gov.Disclaimer) }
+
+			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cachedAnswer)
+			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, CalculateSavings(userReq.Model, pT, rT), int(time.Since(startTime).Milliseconds()), userReq.Message, cachedAnswer, triggeredRule, govAction)
+			return
+		}
+	}
+
+	// --- 4. UNIVERSAL ROUTER (SELF-HEALING) ---
 	var targetURL string
 	var payloadBytes []byte
 	var targetKey string
@@ -304,7 +335,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	isGemini := strings.Contains(modelLower, "gemini")
 
 	if strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral") {
-		// GROQ
 		targetURL = "https://api.groq.com/openai/v1/chat/completions"
 		targetKey = cfg.GroqKey
 		if userGroqKey != "" { targetKey = userGroqKey }
@@ -312,7 +342,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🔀 [ROUTING] Groq Bridge")
 
 	} else if isGemini {
-		// --- THE UNBREAKABLE GEMINI ADAPTER ---
 		targetKey = cfg.GeminiKey
 		if userGeminiKey != "" { targetKey = userGeminiKey }
 		
@@ -320,14 +349,14 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		if cached, ok := discoveredModelMap.Load(targetKey); ok { modelID = cached.(string) }
 		modelID = strings.TrimPrefix(modelID, "models/")
 
-		// Use the direct Native endpoint (alt=sse is crucial)
 		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", modelID, targetKey)
-		geminiPayload := map[string]any{"contents": []map[string]any{{"parts": []map[string]string{{"text": userReq.Message}}}}}
+		geminiPayload := gemini.GeminiRequest{
+			Contents: []gemini.Content{{Parts: []gemini.Part{{Text: userReq.Message}}}},
+		}
 		payloadBytes, _ = json.Marshal(geminiPayload)
 		log.Printf("🛰️ [NATIVE] Routing Gemini -> %s", modelID)
 
 	} else {
-		// OPENAI
 		targetURL = "https://api.openai.com/v1/chat/completions"
 		targetKey = cfg.OpenAIKey
 		if userOpenAIKey != "" { targetKey = userOpenAIKey }
@@ -335,7 +364,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🔀 [ROUTING] OpenAI Bridge")
 	}
 
-	// 4. EXECUTE
+	// --- 5. EXECUTE ---
 	req, _ := http.NewRequest("POST", targetURL, bytes.NewBuffer(payloadBytes))
 	req.Header.Set("Content-Type", "application/json")
 	if !isGemini { req.Header.Set("Authorization", "Bearer "+targetKey) }
@@ -343,26 +372,32 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 90 * time.Second}
 	resp, err := client.Do(req)
 
-	// SELF-HEALING HOOK
 	if isGemini && (err != nil || (resp != nil && resp.StatusCode == 404)) {
-		log.Printf("🔄 [HEALING] V1beta 404 detected. Discovering model...")
-		workingModel := discoverWorkingGemini(targetKey)
+		log.Printf("🔄 [HEALING] Triggering Re-Probe...")
+		workingModel := DiscoverWorkingModel(targetKey)
+		workingModel = strings.TrimPrefix(workingModel, "models/")
 		discoveredModelMap.Store(targetKey, workingModel)
 		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", workingModel, targetKey)
+		
+		geminiPayload := gemini.GeminiRequest{
+			Contents: []gemini.Content{{Parts: []gemini.Part{{Text: userReq.Message}}}},
+		}
+		payloadBytes, _ = json.Marshal(geminiPayload)
 		req, _ = http.NewRequest("POST", targetURL, bytes.NewBuffer(payloadBytes))
 		resp, err = client.Do(req)
 	}
 
 	if err != nil || (resp != nil && resp.StatusCode != 200) {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("❌ [PROVIDER ERROR] %s", string(body))
-		go LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, string(body), "NONE", "FAILED")
-		fmt.Fprintf(w, "data: {\"error\": \"Inference failed\"}\n\n")
+		log.Printf("❌ [PROVIDER ERROR] Status: %d | Body: %s", resp.StatusCode, string(body))
+		go LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, string(body), triggeredRule, "FAILED")
+		fmt.Fprintf(w, "data: {\"error\": \"Inference failed\", \"details\": %s}\n\n", string(body))
 		return
 	}
 	defer resp.Body.Close()
+	log.Printf("📡 [STREAM] Provider Connected. Capturing...")
 
-	// --- 5. STREAM PARSER & SMOOTH PACER ---
+	// --- 6. UNIFIED STREAM PARSER ---
 	reader := bufio.NewReader(resp.Body)
 	var fullResponseBuilder strings.Builder
 	for {
@@ -372,73 +407,57 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(lineStr, "data: ") {
 			cleanLine := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
 			
-			// 🚀 HANG FIX: Break on DONE
 			if cleanLine == "[DONE]" { 
 				fmt.Fprintf(w, "data: [DONE]\n\n")
 				break 
 			}
+			if cleanLine == "" { continue }
 
 			var extracted string
 			if isGemini {
 				var gRes gemini.GeminiResponse
 				if err := json.Unmarshal([]byte(cleanLine), &gRes); err == nil && len(gRes.Candidates) > 0 {
-					extracted = gRes.Candidates[0].Content.Parts[0].Text
+					if len(gRes.Candidates[0].Content.Parts) > 0 {
+						extracted = gRes.Candidates[0].Content.Parts[0].Text
+					}
 				}
 			} else {
-				// 🚀 DYNAMIC OPENAI PARSER: Fixed GPT-3.5 0-token issue
-				var raw map[string]interface{}
-				if err := json.Unmarshal([]byte(cleanLine), &raw); err == nil {
-					if choices, ok := raw["choices"].([]interface{}); ok && len(choices) > 0 {
-						if choice, ok := choices[0].(map[string]interface{}); ok {
-							if delta, ok := choice["delta"].(map[string]interface{}); ok {
-								if content, ok := delta["content"].(string); ok {
-									extracted = content
-								}
-							}
-						}
-					}
+				var oRes struct { Choices []struct { Delta struct { Content string `json:"content"` } `json:"delta"` } `json:"choices"` }
+				if err := json.Unmarshal([]byte(cleanLine), &oRes); err == nil && len(oRes.Choices) > 0 {
+					extracted = oRes.Choices[0].Delta.Content
 				}
 			}
 
-			// 🚀 THE SMOOTH PACER: Splits paragraphs into words for consistent SSE visual
 			if extracted != "" {
 				fullResponseBuilder.WriteString(extracted)
-				words := strings.Split(extracted, " ")
-				for i, word := range words {
-					content := word
-					if i < len(words)-1 { content += " " }
-					
-					formatted := map[string]any{"choices": []map[string]any{{"delta": map[string]string{"content": content}}}}
-					jsonChunk, _ := json.Marshal(formatted)
-					fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-					
-					// Force Browser Refresh
-					if f, ok := w.(http.Flusher); ok { f.Flush() }
-					
-					// Only sleep for large chunks (Gemini) to create smooth typing
-					if len(words) > 1 { time.Sleep(15 * time.Millisecond) }
-				}
+				chunk := map[string]any{"choices": []map[string]any{{"delta": map[string]string{"content": extracted}}}}
+				jsonChunk, _ := json.Marshal(chunk)
+				fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
+				if f, ok := w.(http.Flusher); ok { f.Flush() }
+				if isGemini { time.Sleep(10 * time.Millisecond) }
 			}
 		}
 	}
 
-	// --- 6. FINAL LEDGER ---
+	// --- 7. LEDGER ---
 	finalText := fullResponseBuilder.String()
 	if finalText != "" {
 		if gov.Disclaimer != "" { finalText += gov.Disclaimer }
 		go func() {
 			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(finalText)
+			latency := int(time.Since(startTime).Milliseconds())
 			if !usingOwnKey && redisClient != nil {
 				redisClient.Incr(ctx, "stats:total_requests")
 				redisClient.Incr(ctx, "stats:cache_misses")
 			}
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, finalText, 24*time.Hour) }
-			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, int(time.Since(startTime).Milliseconds()), userReq.Message, finalText, triggeredRule, govAction)
+			if vector != nil && cfg.PineconeKey != "" { SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, msgHash, vector, finalText) }
+			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency, userReq.Message, finalText, triggeredRule, govAction)
 		}()
 	}
 }
 
-// --- ALL HELPERS ---
+// --- HELPERS (Essential) ---
 
 func getStreamAPIKey(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
@@ -457,26 +476,4 @@ func streamSimulatedResponse(w http.ResponseWriter, text string) {
 		time.Sleep(15 * time.Millisecond)
 	}
 	fmt.Fprintf(w, "data: [DONE]\n\n")
-}
-
-func discoverWorkingGemini(key string) string {
-	versions := []string{"v1beta", "v1"}
-	for _, ver := range versions {
-		url := fmt.Sprintf("https://generativelanguage.googleapis.com/%s/models?key=%s", ver, key)
-		resp, _ := http.Get(url)
-		if resp != nil {
-			defer resp.Body.Close()
-			var list struct { Models []struct { Name string `json:"name"`; SupportedGenerationMethods []string `json:"supportedGenerationMethods"` } `json:"models"` }
-			json.NewDecoder(resp.Body).Decode(&list)
-			for _, m := range list.Models {
-				for _, method := range m.SupportedGenerationMethods {
-					if method == "generateContent" {
-						name := strings.TrimPrefix(m.Name, "models/")
-						if strings.Contains(name, "1.5-flash") { return name }
-					}
-				}
-			}
-		}
-	}
-	return "gemini-1.5-flash"
 }
