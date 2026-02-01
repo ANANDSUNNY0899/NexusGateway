@@ -11,16 +11,19 @@ import (
 type GeminiAdapter struct{}
 
 func (g *GeminiAdapter) PrepareRequest(prompt, model, key string) (*http.Request, error) {
-	// 1. STABLE MODEL ID (Google V1 standard)
-	modelID := "gemini-1.5-flash" 
-	if strings.Contains(strings.ToLower(model), "pro") {
-		modelID = "gemini-1.5-pro"
+	// 🚀 THE FIX: Model Mapping to -latest version
+	modelID := strings.TrimPrefix(strings.ToLower(model), "models/")
+	
+	// Google AI Studio (AIza...) keys often REQUIRE the -latest suffix for 1.5 models
+	if modelID == "gemini-1.5-flash" {
+		modelID = "gemini-1.5-flash-latest"
+	} else if modelID == "gemini-1.5-pro" {
+		modelID = "gemini-1.5-pro-latest"
 	}
 
-	// 2. STABLE V1 ENDPOINT (Removing v1beta, adding alt=sse)
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1/models/%s:streamGenerateContent?alt=sse&key=%s", modelID, key)
+	// URL: Switch back to v1beta with the -latest model anchor
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", modelID, key)
 	
-	// 3. NATIVE GOOGLE PAYLOAD (The only one V1 accepts reliably)
 	payload := map[string]any{
 		"contents": []map[string]any{
 			{
@@ -41,28 +44,31 @@ func (g *GeminiAdapter) PrepareRequest(prompt, model, key string) (*http.Request
 	if err != nil { return nil, err }
 	
 	req.Header.Set("Content-Type", "application/json")
-	// IMPORTANT: No Authorization header set here.
 	return req, nil
 }
 
 func (g *GeminiAdapter) ParseStreamChunk(line string) (string, bool) {
 	cleanLine := strings.TrimSpace(line)
 	if !strings.HasPrefix(cleanLine, "data: ") { return "", false }
-	
 	cleanLine = strings.TrimPrefix(cleanLine, "data: ")
-	if cleanLine == "" { return "", false }
-
-	// Google Native SSE Parsing logic
-	var resp struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct { Text string `json:"text"` } `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
 	
-	if err := json.Unmarshal([]byte(cleanLine), &resp); err == nil && len(resp.Candidates) > 0 {
-		return resp.Candidates[0].Content.Parts[0].Text, false
+	if cleanLine == "" || cleanLine == "[DONE]" { return "", false }
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal([]byte(cleanLine), &resp); err == nil {
+		if candidates, ok := resp["candidates"].([]interface{}); ok && len(candidates) > 0 {
+			if first, ok := candidates[0].(map[string]interface{}); ok {
+				if content, ok := first["content"].(map[string]interface{}); ok {
+					if parts, ok := content["parts"].([]interface{}); ok && len(parts) > 0 {
+						if part, ok := parts[0].(map[string]interface{}); ok {
+							if text, ok := part["text"].(string); ok {
+								return text, false
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 	return "", false
 }

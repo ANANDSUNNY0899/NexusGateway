@@ -2,7 +2,7 @@ package handler
 
 import (
 	"NexusGateway/config"
-	"NexusGateway/handler/gemini" // Now properly used
+	"NexusGateway/handler/gemini"
 	"bufio"
 	"bytes"
 	"context"
@@ -16,10 +16,7 @@ import (
 	"time"
 )
 
-// Global Discovery Cache
 var discoveredModelMap = sync.Map{}
-
-// --- MAIN HANDLER ---
 
 func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
@@ -28,117 +25,84 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	userKey := getStreamAPIKey(r)
 	redisClient := GetClient()
 
-	// 1. CAPTURE BYOK & AUTH
 	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
 	userGroqKey := r.Header.Get("x-nexus-groq-key")
 	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
 	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "")
 
-	// Set SSE Headers
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("X-Accel-Buffering", "no") 
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	var userReq ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
-		return
-	}
+	json.NewDecoder(r.Body).Decode(&userReq)
 	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
 
 	// --- 🏛️ PHASE 1: SOVEREIGN GOVERNANCE ---
 	gov := EvaluateConstitution(userReq.Message)
 	if !gov.Allowed {
-		log.Printf("🚫 [REFUSAL] Constitution Blocked: %s", gov.RuleID)
+		log.Printf("🚫 [REFUSAL] Blocked by Governance")
 		streamSimulatedResponse(w, gov.RefusalMsg)
 		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, gov.RefusalMsg, gov.RuleID, "BLOCKED")
 		return
 	}
 
-	// Governance Setup for Logs
-	userReq.Message = gov.ModifiedText
-	govAction := "PERMITTED"
-	triggeredRule := "NONE"
-	if gov.RuleID != "NONE" {
-		govAction = "REDACTED"
-		triggeredRule = gov.RuleID
+	// 🛡️ IRON DOME: PREMIUM GATE
+	if !usingOwnKey && (strings.Contains(userReq.Model, "gpt-4") || strings.Contains(userReq.Model, "claude-3")) {
+		log.Printf("🛡️ [IRON DOME] Blocking premium model")
+		fmt.Fprintf(w, "data: {\"error\": \"Premium Model Locked. Use BYOK or Upgrade.\"}\n\n")
+		return
 	}
 
-	log.Printf("📥 [REQUEST] User: %s... | Model: %s | Gov: %s", userKey[:6], userReq.Model, govAction)
+	userReq.Message = gov.ModifiedText
+	govAction := "PERMITTED"
+	if gov.RuleID != "NONE" { govAction = "REDACTED" }
 
-	// --- 2. HYBRID CACHE LAYER 0 (REDIS) ---
+	// 2. CACHE LAYER 0 (REDIS)
 	cleanMsg := strings.ToLower(strings.TrimSpace(userReq.Message))
 	msgHash := GenerateHash(cleanMsg)
 	if redisClient != nil {
 		if cached, _ := redisClient.Get(ctx, "exact:"+msgHash).Result(); cached != "" {
-			log.Printf("🚀 [HIT] Redis serving instantly.")
+			log.Printf("🚀 [HIT] Redis")
 			streamSimulatedResponse(w, cached)
-			if gov.Disclaimer != "" { streamSimulatedResponse(w, gov.Disclaimer) }
-
-			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cached)
-			sav := CalculateSavings(userReq.Model, pT, rT)
-			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, sav, int(time.Since(startTime).Milliseconds()), userReq.Message, cached, triggeredRule, govAction)
+			go LogRequest(userKey, userReq.Model, 200, true, len(userReq.Message)/4, len(cached)/4, CalculateSavings(userReq.Model, len(userReq.Message)/4, len(cached)/4), int(time.Since(startTime).Milliseconds()), userReq.Message, cached, gov.RuleID, govAction)
 			return
 		}
 	}
 
-	log.Printf("🐢 [MISS] No Redis match. Checking Semantic Cache...")
+	log.Printf("🐢 [MISS] No Redis match found for: %s", msgHash[:8])
 
-	// --- 3. VECTOR DB SEARCH (LAYER 1) ---
-	vector, _ := GetEmbedding(userReq.Message, cfg.OpenAIKey)
-	if vector != nil && cfg.PineconeKey != "" {
-		cachedAnswer, score, err := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-		if err == nil && score > 0.75 {
-			log.Printf("⚡ [PINECONE HIT] Score: %.2f", score)
-			streamSimulatedResponse(w, cachedAnswer)
-			if gov.Disclaimer != "" { streamSimulatedResponse(w, gov.Disclaimer) }
-
-			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cachedAnswer)
-			sav := CalculateSavings(userReq.Model, pT, rT)
-			go LogRequest(userKey, userReq.Model, 200, true, pT, rT, sav, int(time.Since(startTime).Milliseconds()), userReq.Message, cachedAnswer, triggeredRule, govAction)
-			return
-		}
-	}
-
-	// --- 4. UNIVERSAL ROUTER (SELF-HEALING) ---
+	// 3. UNIVERSAL ROUTER
 	var targetURL string
 	var payloadBytes []byte
+	var targetKey string
 	modelLower := strings.ToLower(userReq.Model)
-	targetKey := cfg.OpenAIKey
-	
-	// FIX: Declare isGemini here for global scope within function
 	isGemini := strings.Contains(modelLower, "gemini")
 
-	if strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral") {
+	if isGemini {
+		targetKey = cfg.GeminiKey
+		if userGeminiKey != "" { targetKey = userGeminiKey }
+		
+		modelID := "gemini-1.5-flash"
+		if val, ok := discoveredModelMap.Load(targetKey); ok {
+			modelID = val.(string)
+		} else {
+			modelID = DiscoverWorkingModel(targetKey)
+			discoveredModelMap.Store(targetKey, modelID)
+		}
+
+		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", modelID, targetKey)
+		log.Printf("🛰️ [NATIVE] Adaptive Path -> %s", modelID)
+		
+		geminiPayload := map[string]any{"contents": []map[string]any{{"parts": []map[string]string{{"text": userReq.Message}}}}}
+		payloadBytes, _ = json.Marshal(geminiPayload)
+
+	} else if strings.Contains(modelLower, "llama") {
 		targetURL = "https://api.groq.com/openai/v1/chat/completions"
 		targetKey = cfg.GroqKey
 		if userGroqKey != "" { targetKey = userGroqKey }
 		payloadBytes, _ = json.Marshal(StreamRequestPayload{Model: "llama-3.3-70b-versatile", Messages: []Message{{Role: "user", Content: userReq.Message}}, Stream: true})
 		log.Printf("🔀 [ROUTING] Groq Bridge")
-
-	} else if isGemini {
-		keyToUse := cfg.GeminiKey
-		if userGeminiKey != "" { keyToUse = userGeminiKey }
-		
-		modelID := "gemini-1.5-flash"
-		if cached, ok := discoveredModelMap.Load(keyToUse); ok {
-			modelID = cached.(string)
-			log.Printf("📌 [PINNED] Using: %s", modelID)
-		} else {
-			modelID = discoverWorkingGemini(keyToUse)
-			discoveredModelMap.Store(keyToUse, modelID)
-		}
-
-		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", modelID, keyToUse)
-		
-		// Use the Gemini native type from our package
-		geminiPayload := gemini.GeminiRequest{
-			Contents: []gemini.Content{{Parts: []gemini.Part{{Text: userReq.Message}}}},
-		}
-		payloadBytes, _ = json.Marshal(geminiPayload)
-		log.Printf("🛰️ [ADAPTIVE] Routing to Gemini: %s", modelID)
-
 	} else {
 		targetURL = "https://api.openai.com/v1/chat/completions"
 		targetKey = cfg.OpenAIKey
@@ -147,35 +111,32 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🔀 [ROUTING] OpenAI Bridge")
 	}
 
-	// --- 5. EXECUTE ---
+	// 4. EXECUTE
 	req, _ := http.NewRequest("POST", targetURL, bytes.NewBuffer(payloadBytes))
 	req.Header.Set("Content-Type", "application/json")
-	if !isGemini { 
-		req.Header.Set("Authorization", "Bearer "+targetKey) 
-	}
+	if !isGemini { req.Header.Set("Authorization", "Bearer "+targetKey) }
 
 	client := &http.Client{Timeout: 90 * time.Second}
 	resp, err := client.Do(req)
 
-	if isGemini && (err != nil || resp.StatusCode != 200) {
-		log.Printf("🔄 [HEALING] Re-probing Google API...")
-		workingModel := discoverWorkingGemini(targetKey)
-		discoveredModelMap.Store(targetKey, workingModel)
-		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", workingModel, targetKey)
+	if isGemini && (err != nil || (resp != nil && resp.StatusCode == 404)) {
+		log.Printf("🔄 [HEALING] Connection Failed. Re-probing...")
+		modelID := DiscoverWorkingModel(targetKey)
+		discoveredModelMap.Store(targetKey, modelID)
+		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", modelID, targetKey)
 		req, _ = http.NewRequest("POST", targetURL, bytes.NewBuffer(payloadBytes))
-		req.Header.Set("Content-Type", "application/json")
 		resp, err = client.Do(req)
 	}
 
 	if err != nil || resp.StatusCode != 200 {
 		errorBody, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ [PROVIDER ERROR] %s", string(errorBody))
-		go LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, string(errorBody), triggeredRule, "FAILED")
+		go LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, string(errorBody), gov.RuleID, "FAILED")
 		return
 	}
 	defer resp.Body.Close()
 
-	// --- 6. PARSER ---
+	// 5. PARSER
 	reader := bufio.NewReader(resp.Body)
 	var fullResponseBuilder strings.Builder
 	for {
@@ -184,13 +145,18 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		lineStr := string(line)
 		if strings.HasPrefix(lineStr, "data: ") {
 			cleanLine := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
-			if cleanLine == "" || cleanLine == "[DONE]" { break }
+			if cleanLine == "" || cleanLine == "[DONE]" { 
+				fmt.Fprintf(w, "data: [DONE]\n\n")
+				break 
+			}
 
 			var extracted string
 			if isGemini {
-				var gRes gemini.GeminiResponse // Properly using the import
+				var gRes gemini.GeminiResponse
 				if err := json.Unmarshal([]byte(cleanLine), &gRes); err == nil && len(gRes.Candidates) > 0 {
-					extracted = gRes.Candidates[0].Content.Parts[0].Text
+					if len(gRes.Candidates[0].Content.Parts) > 0 {
+						extracted = gRes.Candidates[0].Content.Parts[0].Text
+					}
 				}
 			} else {
 				var oRes struct { Choices []struct { Delta struct { Content string `json:"content"` } `json:"delta"` } `json:"choices"` }
@@ -201,54 +167,31 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
 			if extracted != "" {
 				fullResponseBuilder.WriteString(extracted)
-				formatted := map[string]any{"choices": []map[string]any{{"delta": map[string]string{"content": extracted}}}}
-				jsonChunk, _ := json.Marshal(formatted)
+				chunk := map[string]any{"choices": []map[string]any{{"delta": map[string]string{"content": extracted}}}}
+				jsonChunk, _ := json.Marshal(chunk)
 				fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-				w.(http.Flusher).Flush()
+				if f, ok := w.(http.Flusher); ok { f.Flush() }
 				if isGemini { time.Sleep(10 * time.Millisecond) }
 			}
 		}
 	}
 
-	// --- 7. FINAL LEDGER ---
+	// 6. LEDGER
 	finalText := fullResponseBuilder.String()
-	if gov.Disclaimer != "" { finalText += gov.Disclaimer }
-	
 	if finalText != "" {
+		if gov.Disclaimer != "" { finalText += gov.Disclaimer }
 		go func() {
 			if !usingOwnKey && redisClient != nil {
 				redisClient.Incr(ctx, "stats:total_requests")
 				redisClient.Incr(ctx, "stats:cache_misses")
 			}
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, finalText, 24*time.Hour) }
-			if vector != nil && cfg.PineconeKey != "" { SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, msgHash, vector, finalText) }
-			LogRequest(userKey, userReq.Model, 200, false, EstimateTokens(userReq.Message), EstimateTokens(finalText), 0, int(time.Since(startTime).Milliseconds()), userReq.Message, finalText, gov.RuleID, govAction)
+			LogRequest(userKey, userReq.Model, 200, false, len(userReq.Message)/4, len(finalText)/4, 0, int(time.Since(startTime).Milliseconds()), userReq.Message, finalText, gov.RuleID, govAction)
 		}()
 	}
 }
 
-// --- ALL HELPERS (Synced) ---
-
-func discoverWorkingGemini(key string) string {
-	versions := []string{"v1", "v1beta"}
-	for _, ver := range versions {
-		url := fmt.Sprintf("https://generativelanguage.googleapis.com/%s/models?key=%s", ver, key)
-		resp, err := http.Get(url)
-		if err != nil || resp.StatusCode != 200 { continue }
-		defer resp.Body.Close()
-		var list struct { Models []struct { Name string `json:"name"`; SupportedGenerationMethods []string `json:"supportedGenerationMethods"` } `json:"models"` }
-		json.NewDecoder(resp.Body).Decode(&list)
-		for _, m := range list.Models {
-			for _, method := range m.SupportedGenerationMethods {
-				if method == "generateContent" {
-					name := strings.TrimPrefix(m.Name, "models/")
-					if strings.Contains(name, "1.5-flash") { return name }
-				}
-			}
-		}
-	}
-	return "gemini-1.5-flash"
-}
+// --- HELPERS ---
 
 func getStreamAPIKey(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
@@ -263,7 +206,7 @@ func streamSimulatedResponse(w http.ResponseWriter, text string) {
 		formatted := map[string]any{"choices": []map[string]any{{"delta": map[string]string{"content": word + " "}}}}
 		jsonChunk, _ := json.Marshal(formatted)
 		fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-		w.(http.Flusher).Flush()
+		if f, ok := w.(http.Flusher); ok { f.Flush() }
 		time.Sleep(15 * time.Millisecond)
 	}
 	fmt.Fprintf(w, "data: [DONE]\n\n")
