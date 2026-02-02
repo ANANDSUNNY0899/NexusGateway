@@ -34,7 +34,15 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, "Invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-	if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
+	// if userReq.Model == "" { userReq.Model = "gpt-3.5-turbo" }
+
+
+	if userReq.Model == "" { 
+    userReq.Model = "llama-3.3-70b-versatile" 
+}
+
+
+
 
 	// --- 🏛️ PHASE 1: SOVEREIGN GOVERNANCE ---
 	gov := EvaluateConstitution(userReq.Message)
@@ -102,7 +110,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	} else if userOpenAIKey != "" { targetKey = userOpenAIKey }
 
 	// 6. EXECUTE CALL
-	req, _ := provider.PrepareRequest(userReq.Message, userReq.Model, targetKey)
+    req, _ := provider.PrepareRequest(userReq.Message, userReq.Model, targetKey, "")
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	
