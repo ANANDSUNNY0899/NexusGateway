@@ -202,22 +202,25 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// --- 7. LEDGER ---
+	// 7. FINAL TELEMETRY LEDGER
 	finalText := fullResponseBuilder.String()
 	if finalText != "" {
-		if gov.Disclaimer != "" { finalText += gov.Disclaimer }
 		go func() {
 			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(finalText)
 			latency := int(time.Since(startTime).Milliseconds())
-			log.Printf("📊 [LEDGER] Telemetry: %d tokens | %dms latency", pT+cT, latency)
 
-			if !usingOwnKey && redisClient != nil {
-				redisClient.Incr(ctx, "stats:total_requests")
-				redisClient.Incr(ctx, "stats:cache_misses")
+			if !usingOwnKey {
+			IncrementUsage(userKey) // Database mein credits -1
+			if redisClient != nil {
+				redisClient.Incr(ctx, "stats:total_requests") // Global Stats update
 			}
+		}
+
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, finalText, 24*time.Hour) }
 			if vector != nil && cfg.PineconeKey != "" { SaveToPinecone(cfg.PineconeHost, cfg.PineconeKey, msgHash, vector, finalText) }
-			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency, userReq.Message, finalText, triggeredRule, govAction)
+			
+			// Log telemetry with 12 parameters
+			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency, userReq.Message, finalText, "NONE", "PERMITTED")
 		}()
 	}
 }
