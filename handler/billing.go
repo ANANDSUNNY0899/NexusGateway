@@ -43,11 +43,18 @@ func HandleCheckout(w http.ResponseWriter, r *http.Request) {
 
 	s, err := session.New(params)
 	if err != nil {
-		log.Printf("❌ Stripe Session Fail: %v", err)
-		respondWithError(w, "Stripe configuration error", http.StatusInternalServerError)
+		log.Printf("❌ STRIPE ERROR: %v", err) // 🚀 This will show the exact reason in terminal
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Stripe Session Creation Failed",
+			"details": err.Error(), // 🚀 Tell frontend what went wrong
+		})
 		return
 	}
 
+
+	
 	// 3. Send URL to Frontend
 	json.NewEncoder(w).Encode(map[string]string{
 		"checkout_url": s.URL,
