@@ -35,7 +35,7 @@ func HandleCheckout(w http.ResponseWriter, r *http.Request) {
 		ClientReferenceID: stripe.String(apiKey), // 🚀 CRITICAL: Link payment to Nexus User
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
-				Price:    stripe.String("price_1Qmq2vSDO9F59ZbeV1BETA"), // 👈 Yahan apna real Price ID daalein
+				Price:    stripe.String("prod_TYo4Y37GMHO8DW"),
 				Quantity: stripe.Int64(1),
 			},
 		},
@@ -54,7 +54,7 @@ func HandleCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 
-	
+
 	// 3. Send URL to Frontend
 	json.NewEncoder(w).Encode(map[string]string{
 		"checkout_url": s.URL,
