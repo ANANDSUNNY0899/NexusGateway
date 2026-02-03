@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://nexus-gateway.org/LOGO.png" width="80" height="80" />
+<img src="https://nexus-gateway.org/LOGO.png" width="180" height="180" />
 
 #  Nexus Gateway
 ### High-Performance AI Semantic Caching & Monetization Layer
