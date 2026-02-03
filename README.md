@@ -1,9 +1,10 @@
 <div align="center">
 
-<img src="https://nexus-gateway.org/LOGO.png" width="105" height="105" />
+<img src="https://nexus-gateway.org/LOGO.png" width="80" height="80" />
 
 #  Nexus Gateway
-### High-performance inference routing, semantic caching, and deterministic governance at the edge.
+### High-Performance AI Semantic Caching & Monetization Layer
+One line of code to reduce LLM latency by 95%, costs by 90%, and enforce data privacy.
 
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
 ![Redis](https://img.shields.io/badge/redis-%23DD0031.svg?style=for-the-badge&logo=redis&logoColor=white)
@@ -16,7 +17,7 @@
 
 [Live Demo](https://nexus-gateway.org) · [Report Bug](https://github.com/ANANDSUNNY0899/NexusGateway/issues) · [Request Feature](https://github.com/ANANDSUNNY0899/NexusGateway/issues)
 
-
+</div>
 
 ---
 
@@ -66,26 +67,6 @@ By using **Vector Embeddings (OpenAI text-embedding-3)** and **Cosine Similarity
 
 ---
 
-# Quick Start (One-Line Integration)
-Point your application to the Nexus Data Plane to instantly enable semantic caching and governance.
-```python
-from nexus_gateway import NexusClient
-
-# Initialize the Sovereign Gateway
-client = NexusClient(api_key="nk-your-api-key")
-
-# Execute universal inference with Adaptive Routing
-# Defaults to Llama 3.3 (Groq) for ultra-fast response
-stream = client.chat(
-    model="llama-3.3-70b-versatile", 
-    message="Optimize this Go connection pool.",
-    stream=True)
-
-for word in stream:
-    print(word, end="", flush=True)
-
-```
-
 ##  System Architecture
 
 ```mermaid
@@ -101,14 +82,13 @@ graph TD
     Go -->|6. Semantic Search| Pine[("Pinecone Vector DB")]
     
     Pine -- "Hit (>0.75 Score)" --> Go
-    Pine -- Miss --> LLM["Universal Router (Groq/Gemini/OAI)"]
+    Pine -- Miss --> LLM["OpenAI / Anthropic"]
     
     LLM --> Go
     Go -->|7. Cache Result| Pine
     Go --> User
 ```
-
-
+<br/>
 
 # Getting Started
 ## Prerequisites
@@ -129,10 +109,11 @@ cd NexusGateway
 ```Bash
 pip install nexus-gateway
 ```
-# Node.js (NPM)
-```Bash
+# You can install the official clinet via npm
+```bash
 npm install nexus-gateway-js
 ```
+
 # Setup Environment
     ## Create a .env file or set variables in your terminal:
 
@@ -159,11 +140,11 @@ npm install nexus-gateway-js
    * Python SDK: pip install nexus-gateway (https://pypi.org/project/nexus-gateway/)
    * Node.js SDK: npm install nexus-gateway-js (https://www.npmjs.com/package/nexus-gateway-js)
 
-## Roadmap
+##  Completed Roadmap
 
 - [x] **v3.1 Sovereign Shield:** Deterministic PII Redaction & Data Governance.
 - [x] **Adaptive Discovery:** Automated Failover for Gemini/Google API shifts.
-- [x] **X-Ray Inspector:** Full payload transparency and trace auditing.
+- [x] **X-Ray Inspector: Full** payload transparency and trace auditing.
 - [ ] **Organization Support:** Multi-tenant team accounts and shared quotas.
 - [ ] **Smart Arbitrage:** Automatic model switching based on real-time token pricing.
 
