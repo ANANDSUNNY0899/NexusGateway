@@ -1,19 +1,41 @@
 <div align="center">
 
-<img src="https://nexus-gateway.org/LOGO.png" width="80" height="80" />
+<img src="https://nexus-gateway.org/LOGO.png" width="105" height="105" />
 
 #  Nexus Gateway
-### High-Performance AI Semantic Caching & Monetization Layer
+### High-performance inference routing, semantic caching, and deterministic governance at the edge.
 
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
 ![Redis](https://img.shields.io/badge/redis-%23DD0031.svg?style=for-the-badge&logo=redis&logoColor=white)
 ![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
 ![Stripe](https://img.shields.io/badge/Stripe-5433FF?style=for-the-badge&logo=stripe&logoColor=white)
 ![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-black?style=for-the-badge)
+[![PyPI version](https://badge.fury.io/py/nexus-gateway.svg)](https://badge.fury.io/py/nexus-gateway)
+[![NPM version](https://img.shields.io/npm/v/nexus-gateway-js.svg)](https://www.npmjs.com/package/nexus-gateway-js)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [Live Demo](https://nexus-gateway.org) · [Report Bug](https://github.com/ANANDSUNNY0899/NexusGateway/issues) · [Request Feature](https://github.com/ANANDSUNNY0899/NexusGateway/issues)
 
-</div>
+
+
+---
+
+## ⚡ Why Nexus Gateway?
+
+| Metric | Legacy API Call | **Nexus Gateway** |
+| :--- | :--- | :--- |
+| **Response Latency** | 1200ms - 3000ms | **5ms (Cache Hit)** |
+| **Data Privacy** | Sent to Provider | **Redacted at Edge** |
+| **Unit Cost** | $0.01 - $0.05 / call | **$0.00 (Cache Hit)** |
+| **Reliability** | Vendor Dependent | **Self-Healing Failover** |
+
+---
+
+## 🔍 X-Ray Deep Observability
+Stop calling AI blindly. Nexus provides a real-time **Trace Inspector** with X-Ray vision into every request payload, response text, and financial saving.
+
+*   **Sovereign Shield:** Automatically redact PII (Emails, IDs) before it leaves your server.
+*   **Adaptive Discovery:** Automatically heals 404 errors by mapping working model engines to your API keys.
 
 ---
 
@@ -44,6 +66,26 @@ By using **Vector Embeddings (OpenAI text-embedding-3)** and **Cosine Similarity
 
 ---
 
+# Quick Start (One-Line Integration)
+Point your application to the Nexus Data Plane to instantly enable semantic caching and governance.
+```python
+from nexus_gateway import NexusClient
+
+# Initialize the Sovereign Gateway
+client = NexusClient(api_key="nk-your-api-key")
+
+# Execute universal inference with Adaptive Routing
+# Defaults to Llama 3.3 (Groq) for ultra-fast response
+stream = client.chat(
+    model="llama-3.3-70b-versatile", 
+    message="Optimize this Go connection pool.",
+    stream=True)
+
+for word in stream:
+    print(word, end="", flush=True)
+
+```
+
 ##  System Architecture
 
 ```mermaid
@@ -59,13 +101,14 @@ graph TD
     Go -->|6. Semantic Search| Pine[("Pinecone Vector DB")]
     
     Pine -- "Hit (>0.75 Score)" --> Go
-    Pine -- Miss --> LLM["OpenAI / Anthropic"]
+    Pine -- Miss --> LLM["Universal Router (Groq/Gemini/OAI)"]
     
     LLM --> Go
     Go -->|7. Cache Result| Pine
     Go --> User
 ```
-<br/>
+
+
 
 # Getting Started
 ## Prerequisites
@@ -85,6 +128,10 @@ cd NexusGateway
 
 ```Bash
 pip install nexus-gateway
+```
+# Node.js (NPM)
+```Bash
+npm install nexus-gateway-js
 ```
 # Setup Environment
     ## Create a .env file or set variables in your terminal:
@@ -112,18 +159,13 @@ pip install nexus-gateway
    * Python SDK: pip install nexus-gateway (https://pypi.org/project/nexus-gateway/)
    * Node.js SDK: npm install nexus-gateway-js (https://www.npmjs.com/package/nexus-gateway-js)
 
-##  Completed Roadmap
+## Roadmap
 
-- [x] **Multi-Model Support:** Universal Router architecture supporting OpenAI (GPT-4) and Anthropic (Claude 3).
-- [x] **Dashboard V2:** Real-time visual analytics charts for traffic and cost monitoring.
-- [x] **SDK:** Official Python wrapper published on PyPI (`pip install nexus-gateway`).
-- [x] **Monetization:** Stripe integration with automated quota management.
-
-##  What's Next?
-
-- [ ] **Node.js SDK:** TypeScript wrapper for JS environments.
-- [ ] **Team Accounts:** Organization-level billing and API key management.
-- [ ] **Advanced Logging:** Searchable history of all past requests and responses.
+- [x] **v3.1 Sovereign Shield:** Deterministic PII Redaction & Data Governance.
+- [x] **Adaptive Discovery:** Automated Failover for Gemini/Google API shifts.
+- [x] **X-Ray Inspector:** Full payload transparency and trace auditing.
+- [ ] **Organization Support:** Multi-tenant team accounts and shared quotas.
+- [ ] **Smart Arbitrage:** Automatic model switching based on real-time token pricing.
 
 ---
 
