@@ -29,11 +29,11 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// B. EXEMPTIONS: In raste par quota check nahi hoga
-		// Humein /api/user/usage ko allow karna hoga taaki dashboard hamesha load ho sake
-		if r.URL.Path == "/api/checkout" || r.URL.Path == "/api/stats" || r.URL.Path == "/api/user/usage" {
+		// --- 🚀 THE FIX: Allow Logs and Usage even if Quota is 0 ---
+        if r.URL.Path == "/api/checkout" || r.URL.Path == "/api/user/usage" || r.URL.Path == "/api/stats" || r.URL.Path == "/api/logs" {
 			next(w, r)
 			return
-		}
+        }
 
 		// C. THE BYOK BYPASS
 		userOwnOpenAI := r.Header.Get("x-nexus-openai-key")
