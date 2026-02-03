@@ -35,7 +35,7 @@ func HandleCheckout(w http.ResponseWriter, r *http.Request) {
 		ClientReferenceID: stripe.String(apiKey), // 🚀 CRITICAL: Link payment to Nexus User
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
-				Price:    stripe.String("prod_TYo4Y37GMHO8DW"),
+				Price:    stripe.String("price_prod_TYo4Y37GMHO8DW"),
 				Quantity: stripe.Int64(1),
 			},
 		},
