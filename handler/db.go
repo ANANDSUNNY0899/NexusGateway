@@ -53,3 +53,15 @@ func CheckUserLimit(apiKey string) (bool, error) {
 func IncrementUsage(apiKey string) {
 	go db.Exec(context.Background(), "UPDATE users SET requests_used = requests_used + 1 WHERE api_key=$1", apiKey)
 }
+
+
+
+func UpgradeUser(apiKey string) {
+	query := `UPDATE users SET request_limit = 10000, requests_used = 0 WHERE api_key = $1`
+	_, err := db.Exec(context.Background(), query, apiKey)
+	if err != nil {
+		log.Printf("❌ DB Upgrade Fail: %v", err)
+	} else {
+		log.Printf("🎉 User %s upgraded to 10k Credits!", apiKey)
+	}
+}
