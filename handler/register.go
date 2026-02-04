@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"fmt"
 )
 
 func HandleRegister(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +43,9 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("🆕 [NEW USER] Registered: %s", req.Email)
+	Notify(fmt.Sprintf("🆕 *NEW USER DETECTED*\nEmail: %s\nTraction is increasing! 🚀", req.Email))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"api_key": apiKey})
+	
+
 }

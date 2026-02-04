@@ -438,6 +438,9 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil || (resp != nil && resp.StatusCode != 200) {
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ [PROVIDER ERROR] Status: %d | Body: %s", 0, string(body))
+		// 🚀 THE ALERT HOOK
+		Notify(fmt.Sprintf("❌ PROVIDER FAIL: %s\nStatus: %d\nDetails: %s", userReq.Model, resp.StatusCode, string(body)[:100]))
+
 		go LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, string(body), "NONE", "FAILED")
 		fmt.Fprintf(w, "data: {\"error\": \"Inference failed\", \"details\": %s}\n\n", string(body))
 		return

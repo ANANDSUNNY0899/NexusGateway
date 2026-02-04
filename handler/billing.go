@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"io"
+	"fmt"
 	"github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/checkout/session"
 	"github.com/stripe/stripe-go/v76/webhook"
@@ -85,9 +86,11 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			apiKey := session.ClientReferenceID
 			log.Printf("💰 [PAYMENT] Upgrading User Token: %s", apiKey)
+			Notify(fmt.Sprintf("💰 REVENUE: User %s just upgraded to PRO!\n$15.00 captured.", apiKey))
 			UpgradeUser(apiKey) // Call DB Upgrade
 		}
 	}
 
 	w.WriteHeader(http.StatusOK)
 }
+
