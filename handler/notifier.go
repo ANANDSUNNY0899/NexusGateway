@@ -10,33 +10,31 @@ import (
 
 // Notify sends an encrypted signal to the Founder's Telegram
 func Notify(message string) {
-	// 1. Pehle Environment Variables check karega (Production)
+	// 🚀 THE SECURE WAY: Only fetch from System Environment
 	token := os.Getenv("TELEGRAM_TOKEN")
 	chatID := os.Getenv("TELEGRAM_CHAT_ID")
 
-	// 2. Agar ENV mein nahi mila, toh aapki di hui keys use karega (Local Testing)
-	if token == "" {
-		token = "8313635734:AAHklryz4I3yTtqq_IGvn_WTKVWSdJHTyKc"
-	}
-	if chatID == "" {
-		chatID = "5785297510"
-	}
-
-	// Safety check
+	// Safety check: Don't crash, just skip if not configured
 	if token == "" || chatID == "" {
-		log.Println("⚠️  Pulse skipped: No Telegram credentials")
+		log.Println("⚠️  Pulse skipped: Telegram credentials missing in ENV")
 		return
 	}
 
-	// Format and Escape the message for URL
-	msg := url.QueryEscape("🛡️ *[NEXUS PULSE]*\n\n" + message)
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s&parse_mode=Markdown", token, chatID, msg)
+	// Professional Header
+	formattedMsg := fmt.Sprintf("🛡️ *[NEXUS PULSE]*\n\n%s", message)
+	
+	apiURL := fmt.Sprintf(
+		"https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s&parse_mode=Markdown",
+		token,
+		chatID,
+		url.QueryEscape(formattedMsg),
+	)
 
-	// Async Execution
+	// Async Call: Performance first
 	go func() {
 		resp, err := http.Get(apiURL)
 		if err != nil {
-			log.Printf("🚨 Pulse Failed: %v", err)
+			log.Printf("🚨 Pulse Connection Error: %v", err)
 			return
 		}
 		defer resp.Body.Close()
