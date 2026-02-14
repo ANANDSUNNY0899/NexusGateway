@@ -21,7 +21,7 @@ func Notify(message string) {
 	}
 
 	// Professional Header
-	formattedMsg := fmt.Sprintf("🛡️ *[NEXUS PULSE]*\n\n%s", message)
+	formattedMsg := fmt.Sprintf("[NEXUS PULSE v3.1]\n\n%s", message)
 	
 	apiURL := fmt.Sprintf(
 		"https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s&parse_mode=Markdown",
@@ -32,11 +32,13 @@ func Notify(message string) {
 
 	// Async Call: Performance first
 	go func() {
+		log.Printf("📡 Attempting to send Pulse to Telegram...")
 		resp, err := http.Get(apiURL)
 		if err != nil {
 			log.Printf("🚨 Pulse Connection Error: %v", err)
 			return
 		}
 		defer resp.Body.Close()
+		log.Printf("✅ Pulse status: %s", resp.Status)
 	}()
 }
