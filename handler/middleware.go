@@ -90,16 +90,18 @@ func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// 3. CORS MIDDLEWARE: Browser Handshake Fix
+// Inside handler/middleware.go
+
 func CORSMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// 1. Allow Vercel or all origins
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 		
-		// 🚀 THE FIX: Adding x-nexus headers explicitly to prevent Preflight failure in Browser
+		// 🚀 THE CRITICAL FIX: Add ALL nexus headers here
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, x-nexus-openai-key, x-nexus-groq-key, x-nexus-gemini-key, x-nexus-anthropic-key")
 
-		// Handle OPTIONS (Preflight)
+		// 2. Handle Preflight OPTIONS request
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
