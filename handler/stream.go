@@ -552,8 +552,8 @@ package handler
 
 import (
 	"NexusGateway/config"
-	"NexusGateway/handler/gemini"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -568,6 +568,8 @@ import (
 // Global Discovery Cache
 var discoveredModelMap = sync.Map{}
 
+// --- MAIN HANDLER ---
+
 func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 	cfg := config.LoadConfig()
@@ -575,33 +577,32 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	userKey := getStreamAPIKey(r)
 	redisClient := GetClient()
 
+	// 1. CAPTURE BYOK & AUTH
 	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
 	userGroqKey := r.Header.Get("x-nexus-groq-key")
 	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
-	userAnthropicKey := r.Header.Get("x-nexus-anthropic-key")
-	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "" || userAnthropicKey != "")
+	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "")
 
+	// Set Professional SSE Headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no") 
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	var userReq ChatRequest
-	json.NewDecoder(r.Body).Decode(&userReq)
-	if userReq.Model == "" { userReq.Model = "llama-3.3-70b-versatile" }
-
-	// --- 🏛️ PHASE 1: GOVERNANCE ---
-	gov := EvaluateConstitution(userReq.Message)
-	if !gov.Allowed {
-		streamSimulatedResponse(w, gov.RefusalMsg)
-		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, gov.RefusalMsg, gov.RuleID, "BLOCKED")
+	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
+		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
 		return
 	}
+	if userReq.Model == "" { userReq.Model = "llama-3.3-70b-versatile" }
 
-	// 🛡️ IRON DOME: PREMIUM GATE
-	if !usingOwnKey && (strings.Contains(userReq.Model, "gpt-4") || strings.Contains(userReq.Model, "claude-3")) {
-		msg := "Premium Model Locked. Use BYOK or Upgrade."
-		streamSimulatedResponse(w, msg)
-		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, msg, "IRON_DOME", "BLOCKED")
+	// --- 🏛️ PHASE 1: SOVEREIGN GOVERNANCE ---
+	gov := EvaluateConstitution(userReq.Message)
+	if !gov.Allowed {
+		log.Printf("🚫 [REFUSAL] Constitution Blocked: %s", gov.RuleID)
+		streamSimulatedResponse(w, gov.RefusalMsg)
+		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, gov.RefusalMsg, gov.RuleID, "BLOCKED")
 		return
 	}
 
@@ -615,12 +616,12 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📥 [REQUEST] User: %s... | Model: %s | Gov: %s", userKey[:6], userReq.Model, govAction)
 
-	// --- 2. HYBRID CACHE ---
+	// --- 2. HYBRID CACHE LAYER 0 (REDIS) ---
 	cleanMsg := strings.ToLower(strings.TrimSpace(userReq.Message))
 	msgHash := GenerateHash(cleanMsg)
 	if redisClient != nil {
 		if cached, _ := redisClient.Get(ctx, "exact:"+msgHash).Result(); cached != "" {
-			log.Printf("🚀 [HIT] Redis")
+			log.Printf("🚀 [HIT] Redis serving instantly.")
 			streamSimulatedResponse(w, cached)
 			if gov.Disclaimer != "" { streamSimulatedResponse(w, gov.Disclaimer) }
 			pT, rT := EstimateTokens(userReq.Message), EstimateTokens(cached)
@@ -629,86 +630,100 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("🐢 [MISS] %s. Routing...", userReq.Model)
-
-	// --- 3. UNIVERSAL ROUTER ---
-	var providerReq *http.Request
-	var err error
+	// --- 3. UNIVERSAL ROUTER (NATIVE BRIDGING) ---
+	var targetURL string
+	var payloadBytes []byte
+	var targetKey string
 	modelLower := strings.ToLower(userReq.Model)
 	isGemini := strings.Contains(modelLower, "gemini")
-	targetKey := strings.TrimSpace(cfg.OpenAIKey)
 
-	if isGemini {
-		targetKey = strings.TrimSpace(cfg.GeminiKey)
-		if userGeminiKey != "" { targetKey = strings.TrimSpace(userGeminiKey) }
-		modelID := "gemini-1.5-flash"
-		if val, ok := discoveredModelMap.Load(targetKey); ok { modelID = val.(string) }
-		modelID = strings.TrimPrefix(modelID, "models/")
-		adapter := &GeminiAdapter{}
-		providerReq, err = adapter.PrepareRequest(userReq.Message, modelID, targetKey, "v1")
+	if strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral") {
+		// GROQ
+		targetURL = "https://api.groq.com/openai/v1/chat/completions"
+		targetKey = cfg.GroqKey
+		if userGroqKey != "" { targetKey = userGroqKey }
+		payloadBytes, _ = json.Marshal(StreamRequestPayload{Model: userReq.Model, Messages: []Message{{Role: "user", Content: userReq.Message}}, Stream: true})
+		log.Printf("🔀 [ROUTING] Groq Bridge")
+
+	} else if isGemini {
+		// --- THE GEMINI 2.0 NATIVE FIX ---
+		targetKey = cfg.GeminiKey
+		if userGeminiKey != "" { targetKey = userGeminiKey }
+		
+		modelID := "gemini-2.0-flash-exp" // 🚀 UPGRADED TO 2.0
+		if cached, ok := discoveredModelMap.Load(targetKey); ok { modelID = cached.(string) }
+		
+		// Use Primary Native URL (Bypasses all 404/400 shim errors)
+		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", modelID, targetKey)
+		
+		// Transform OpenAI JSON -> Google Native JSON
+		geminiPayload := map[string]any{
+			"contents": []map[string]any{{"parts": []map[string]string{{"text": userReq.Message}}}},
+		}
+		payloadBytes, _ = json.Marshal(geminiPayload)
+		log.Printf("🛰️ [NATIVE BRIDGE] Routing Gemini -> %s", modelID)
+
 	} else {
-		if strings.Contains(modelLower, "llama") { targetKey = cfg.GroqKey; if userGroqKey != "" { targetKey = strings.TrimSpace(userGroqKey) } }
-		p := GetProvider(userReq.Model)
-		providerReq, err = p.PrepareRequest(userReq.Message, userReq.Model, targetKey, "")
-		if providerReq != nil { providerReq.Header.Set("Authorization", "Bearer "+targetKey) }
+		// OPENAI
+		targetURL = "https://api.openai.com/v1/chat/completions"
+		targetKey = cfg.OpenAIKey
+		if userOpenAIKey != "" { targetKey = userOpenAIKey }
+		payloadBytes, _ = json.Marshal(StreamRequestPayload{Model: userReq.Model, Messages: []Message{{Role: "user", Content: userReq.Message}}, Stream: true})
+		log.Printf("🔀 [ROUTING] OpenAI Bridge")
 	}
 
-	if err != nil { return }
+	// --- 4. EXECUTE ---
+	req, _ := http.NewRequest("POST", targetURL, bytes.NewBuffer(payloadBytes))
+	req.Header.Set("Content-Type", "application/json")
+	if !isGemini {
+		req.Header.Set("Authorization", "Bearer "+targetKey)
+	}
 
-	// --- 4. EXECUTE & HEAL ---
 	client := &http.Client{Timeout: 90 * time.Second}
-	resp, err := client.Do(providerReq)
+	resp, err := client.Do(req)
 
+	// Self-Healing
 	if isGemini && (err != nil || (resp != nil && resp.StatusCode == 404)) {
-		log.Printf("🔄 [HEALING] Re-probing...")
-		// 🚀 CALLS DiscoverWorkingModel FROM gemini_discovery.go
-		workingModel := DiscoverWorkingModel(targetKey) 
+		log.Printf("🔄 [HEALING] Version fail. Re-probing...")
+		workingModel := DiscoverWorkingModel(targetKey) // Calls gemini_discovery.go
 		discoveredModelMap.Store(targetKey, workingModel)
-		adapter := &GeminiAdapter{}
-		providerReq, _ = adapter.PrepareRequest(userReq.Message, workingModel, targetKey, "v1beta")
-		resp, err = client.Do(providerReq)
+		targetURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:streamGenerateContent?alt=sse&key=%s", workingModel, targetKey)
+		req, _ = http.NewRequest("POST", targetURL, bytes.NewBuffer(payloadBytes))
+		resp, err = client.Do(req)
 	}
 
 	if err != nil || (resp != nil && resp.StatusCode != 200) {
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("❌ [PROVIDER ERROR] %s", string(body))
 		go LogRequest(userKey, userReq.Model, 500, false, 0, 0, 0, 0, userReq.Message, string(body), "NONE", "FAILED")
-		fmt.Fprintf(w, "data: {\"error\": \"Inference failed\"}\n\n")
 		return
 	}
 	defer resp.Body.Close()
 
-	// --- 5. PARSER ---
+	// --- 5. STREAM PARSER (UNIFIED) ---
 	reader := bufio.NewReader(resp.Body)
 	var fullResponseBuilder strings.Builder
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil { break }
 		lineStr := string(line)
+
 		if strings.HasPrefix(lineStr, "data: ") {
 			cleanLine := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
-			if cleanLine == "" || cleanLine == "[DONE]" { 
-				fmt.Fprintf(w, "data: [DONE]\n\n")
-				break 
-			}
+			if cleanLine == "" || cleanLine == "[DONE]" { break }
 
 			var extracted string
 			if isGemini {
-				var gRes gemini.GeminiResponse
+				var gRes struct {
+					Candidates []struct { Content struct { Parts []struct { Text string `json:"text"` } `json:"parts"` } `json:"content"` } `json:"candidates"`
+				}
 				if err := json.Unmarshal([]byte(cleanLine), &gRes); err == nil && len(gRes.Candidates) > 0 {
 					extracted = gRes.Candidates[0].Content.Parts[0].Text
 				}
 			} else {
-				var raw map[string]interface{}
-				if err := json.Unmarshal([]byte(cleanLine), &raw); err == nil {
-					if choices, ok := raw["choices"].([]interface{}); ok && len(choices) > 0 {
-						choice := choices[0].(map[string]interface{})
-						if delta, ok := choice["delta"].(map[string]interface{}); ok {
-							if content, ok := delta["content"].(string); ok {
-								extracted = content
-							}
-						}
-					}
+				var oRes struct { Choices []struct { Delta struct { Content string `json:"content"` } `json:"delta"` } `json:"choices"` }
+				if err := json.Unmarshal([]byte(cleanLine), &oRes); err == nil && len(oRes.Choices) > 0 {
+					extracted = oRes.Choices[0].Delta.Content
 				}
 			}
 
@@ -718,7 +733,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 				jsonChunk, _ := json.Marshal(chunk)
 				fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
 				if f, ok := w.(http.Flusher); ok { f.Flush() }
-				if isGemini { time.Sleep(8 * time.Millisecond) }
+				if isGemini { time.Sleep(8 * time.Millisecond) } 
 			}
 		}
 	}
@@ -729,18 +744,18 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		if gov.Disclaimer != "" { finalText += gov.Disclaimer }
 		go func() {
 			pT, cT := EstimateTokens(userReq.Message), EstimateTokens(finalText)
+			latency := int(time.Since(startTime).Milliseconds())
 			if !usingOwnKey && redisClient != nil {
 				redisClient.Incr(ctx, "stats:total_requests")
 				redisClient.Incr(ctx, "stats:cache_misses")
-				IncrementUsage(userKey)
 			}
 			if redisClient != nil { redisClient.Set(ctx, "exact:"+msgHash, finalText, 24*time.Hour) }
-			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, int(time.Since(startTime).Milliseconds()), userReq.Message, finalText, triggeredRule, govAction)
+			LogRequest(userKey, userReq.Model, 200, false, pT, cT, 0, latency, userReq.Message, finalText, triggeredRule, govAction)
 		}()
 	}
 }
 
-// --- HELPERS (Essential) ---
+// --- HELPERS (Synced) ---
 
 func getStreamAPIKey(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
