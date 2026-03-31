@@ -17,14 +17,20 @@ package handler
 import "strings"
 
 func GetProvider(model string) AIProvider {
-	modelLower := strings.ToLower(model)
+    modelLower := strings.ToLower(model)
 
-	if strings.Contains(modelLower, "gemini") {
-		return &GeminiAdapter{}
-	}
-	if strings.Contains(modelLower, "claude") {
-		return &AnthropicAdapter{}
-	}
-	
-	return &OpenAIAdapter{}
+    if strings.Contains(modelLower, "gemini") {
+        return &GeminiAdapter{}
+    }
+    if strings.Contains(modelLower, "claude") {
+        return &AnthropicAdapter{}
+    }
+    if strings.Contains(modelLower, "deepseek") {
+        return &DeepSeekAdapter{}
+    }
+    if strings.Contains(modelLower, "mistral") {
+        return &MistralAdapter{}
+    }
+    
+    return &OpenAIAdapter{}
 }
