@@ -14,7 +14,7 @@ func Notify(message string) {
 
 	if token == "" || chatID == "" { return }
 
-	// 🚀 THE FIX: Clear text only (No Markdown) to ensure alerts always reach you
+	
 	formattedMsg := fmt.Sprintf("[NEXUS PULSE v3.1]\n\n%s", message)
 	
 	apiURL := fmt.Sprintf(

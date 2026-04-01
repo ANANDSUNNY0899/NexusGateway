@@ -107,25 +107,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// // --- 🚀 NEW: LAYER 2 (SEMANTIC PINECONE CACHE) ---
-	// vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
-	// if err == nil {
-	// 	avgSim := 0.65 // Baseline similarity
-	// 	// dynamicThresh := CalculateDynamicThreshold(0.70, avgSim)
-	// 	dynamicThresh := CalculateDynamicThreshold(userReq.Message, 0.70, avgSim)
-
-	// 	answer, score, searchErr := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-	// 	if searchErr == nil && score >= dynamicThresh {
-	// 		log.Printf("🌌 Pinecone Semantic Match (Score: %.2f)", score)
-	// 		streamSimulatedResponse(w, answer)
-	// 		if gov.Disclaimer!= "" {
-	// 			streamSimulatedResponse(w, gov.Disclaimer)
-	// 		}
-	// 		pT, rT := EstimateTokens(userReq.Message), EstimateTokens(answer)
-	// 		go LogRequest(userKey, userReq.Model, 200, true, pT, rT, CalculateSavings(userReq.Model, pT, rT), int(time.Since(startTime).Milliseconds()), userReq.Message, answer, triggeredRule, govAction)
-	// 		return
-	// 	}
-	// }
+	
 
 	// --- 🚀 NEW: LAYER 2 (SEMANTIC PINECONE CACHE) ---
 	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
