@@ -122,34 +122,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// // --- 🌌 LAYER 2 (SEMANTIC PINECONE CACHE) ---
-	// vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
-	// if err == nil {
-	// 	avgSim := 0.65
-	// 	dynamicThresh := CalculateDynamicThreshold(0.70, avgSim)
 
-	// 	answer, score, searchErr := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-	// 	log.Printf("🔍 [DEBUG] Topic: %s | Score: %.4f | Threshold: %.2f", userReq.Message[:15], score, dynamicThresh)
-	// 	if searchErr == nil && score >= dynamicThresh {
-	// 		log.Printf("🌌 Pinecone Semantic Match (Score: %.2f)", score)
-	// 		responseText := answer
-	// 		if gov.Disclaimer != "" { responseText += gov.Disclaimer }
-
-	// 		pT, cT := EstimateTokens(userReq.Message), EstimateTokens(responseText)
-	// 		sav := CalculateSavings(userReq.Model, pT, cT)
-	// 		lat := int(time.Since(startTime).Milliseconds())
-
-	// 		go LogRequest(userKey, userReq.Model, 200, true, pT, cT, sav, lat, userReq.Message, responseText, triggeredRule, govAction)
-
-	// 		w.Header().Set("Content-Type", "application/json")
-	// 		json.NewEncoder(w).Encode(map[string]any{
-	// 			"choices": []map[string]any{
-	// 				{"message": map[string]string{"content": responseText}},
-	// 			},
-	// 		})
-	// 		return
-	// 	}
-	// }
 
 	// --- 🌌 LAYER 2 (SEMANTIC PINECONE CACHE) ---
 vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
