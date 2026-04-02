@@ -386,8 +386,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	userGroqKey := r.Header.Get("x-nexus-groq-key")
 	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
 	userAnthropicKey := r.Header.Get("x-nexus-anthropic-key")
-	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "" || userAnthropicKey != "")
-
+	userDeepSeekKey := r.Header.Get("x-nexus-deepseek-key")
+    usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "" || userAnthropicKey != "" || userDeepSeekKey != "")
 	// Set Professional SSE Headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("X-Accel-Buffering", "no") 
@@ -467,6 +467,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(modelLower, "deepseek"):
 		activeKey = cfg.DeepSeekKey
+		if userDeepSeekKey != "" { activeKey = userDeepSeekKey }
 	case strings.Contains(modelLower, "gemini"):
 		activeKey = cfg.GeminiKey
 		if userGeminiKey != "" { activeKey = userGeminiKey }
