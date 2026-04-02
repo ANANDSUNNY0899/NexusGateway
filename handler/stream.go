@@ -351,17 +351,15 @@
 
 
 
-
 package handler
 
 import (
 	"NexusGateway/config"
 	"bufio"
-	
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	
 	"log"
 	"net/http"
 	"strings"
@@ -369,8 +367,20 @@ import (
 	"time"
 )
 
-// Global Discovery Cache - Maps API Key to its working Model ID
+// Global Discovery Cache (Declared only once)
 var discoveredModelMap = sync.Map{}
+
+/* // UNCOMMENT ONLY IF YOU DELETED THESE FROM types.go
+type Message struct {
+	Role    string `json:"role"`    
+	Content string `json:"content"`
+}
+
+type ChatRequest struct {
+	Model    string    `json:"model"`
+	Messages []Message `json:"messages"`
+}
+*/
 
 // --- MAIN HANDLER ---
 
@@ -381,16 +391,9 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	userKey := getStreamAPIKey(r)
 	redisClient := GetClient()
 
-	// 1. CAPTURE BYOK & AUTH HEADERS
-	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
-	userGroqKey := r.Header.Get("x-nexus-groq-key")
-	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
-	userAnthropicKey := r.Header.Get("x-nexus-anthropic-key")
-	userDeepSeekKey := r.Header.Get("x-nexus-deepseek-key")
-    usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "" || userAnthropicKey != "" || userDeepSeekKey != "")
 	// Set Professional SSE Headers
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("X-Accel-Buffering", "no") 
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -400,18 +403,38 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
 		return
 	}
-	if userReq.Model == "" { userReq.Model = "llama-3.3-70b-versatile" }
+
+	// 🧠 MEMORY LOGIC: Extract the newest message
+	if len(userReq.Messages) == 0 {
+		return
+	}
+	latestIdx := len(userReq.Messages) - 1
+	currentPrompt := userReq.Messages[latestIdx].Content
+
+	if userReq.Model == "" {
+		userReq.Model = "llama-3.3-70b-versatile"
+	}
+
+	// 1. CAPTURE BYOK & AUTH HEADERS
+	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
+	userGroqKey := r.Header.Get("x-nexus-groq-key")
+	userGeminiKey := r.Header.Get("x-nexus-gemini-key")
+	userAnthropicKey := r.Header.Get("x-nexus-anthropic-key")
+	userDeepSeekKey := r.Header.Get("x-nexus-deepseek-key")
+	usingOwnKey := (userOpenAIKey != "" || userGroqKey != "" || userGeminiKey != "" || userAnthropicKey != "" || userDeepSeekKey != "")
 
 	// --- 🏛️ PHASE 1: SOVEREIGN GOVERNANCE ---
-	gov := EvaluateConstitution(userReq.Message)
+	gov := EvaluateConstitution(currentPrompt)
 	if !gov.Allowed {
 		log.Printf("🚫 [REFUSAL] Constitution Blocked: %s", gov.RuleID)
 		streamSimulatedResponse(w, gov.RefusalMsg)
-		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, gov.RefusalMsg, gov.RuleID, "BLOCKED")
+		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, currentPrompt, gov.RefusalMsg, gov.RuleID, "BLOCKED")
 		return
 	}
 
-	userReq.Message = gov.ModifiedText
+	// Apply redaction to the message slice for the AI to see
+	userReq.Messages[latestIdx].Content = gov.ModifiedText
+	currentPrompt = gov.ModifiedText 
 	govAction := "PERMITTED"
 	triggeredRule := "NONE"
 	if gov.RuleID != "NONE" {
@@ -423,18 +446,17 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	if !usingOwnKey && (strings.Contains(userReq.Model, "gpt-4") || strings.Contains(userReq.Model, "claude-3")) {
 		msg := "Premium Model Locked. Use BYOK or Upgrade."
 		streamSimulatedResponse(w, msg)
-		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, userReq.Message, msg, "IRON_DOME", "BLOCKED")
+		go LogRequest(userKey, userReq.Model, 403, false, 0, 0, 0, 0, currentPrompt, msg, "IRON_DOME", "BLOCKED")
 		return
 	}
 
-	log.Printf("📥 [REQUEST] User: %s... | Model: %s | Gov: %s", userKey[:6], userReq.Model, govAction)
+	log.Printf("📥 [REQUEST] User: %s... | Model: %s | Messages: %d", userKey[:6], userReq.Model, len(userReq.Messages))
 
-	// --- 2. HYBRID CACHE LAYER (REDIS & SEMANTIC) ---
-	cleanMsg := strings.ToLower(strings.TrimSpace(userReq.Message))
+	// --- 2. HYBRID CACHE LAYER ---
+	cleanMsg := strings.ToLower(strings.TrimSpace(currentPrompt))
 	msgHash := GenerateHash(cleanMsg)
-	intentKey := GenerateIntentSignature(userReq.Message, cfg.GroqKey)
+	intentKey := GenerateIntentSignature(currentPrompt, cfg.GroqKey)
 
-	// Redis Exact/Intent Check
 	if redisClient != nil {
 		if cached, _ := redisClient.Get(ctx, "exact:"+msgHash).Result(); cached != "" {
 			log.Printf("🚀 [HIT] Redis serving instantly.")
@@ -443,27 +465,24 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Semantic Pinecone Check
-	vector, err := GetEmbedding(userReq.Message, cfg.OpenAIKey)
+	var vector []float32
+	var err error
+	vector, err = GetEmbedding(currentPrompt, cfg.OpenAIKey)
 	if err == nil {
-		dynamicThresh := CalculateDynamicThreshold(userReq.Message, 0.70, 0.65)
+		dynamicThresh := CalculateDynamicThreshold(currentPrompt, 0.70, 0.65)
 		answer, score, searchErr := SearchPinecone(cfg.PineconeHost, cfg.PineconeKey, vector)
-		
-		log.Printf("🔍 [DEBUG] Score: %.4f | Thresh: %.2f", score, dynamicThresh)
-
 		if searchErr == nil && score >= dynamicThresh && answer != "" {
 			log.Printf("🌌 Pinecone Semantic Match (Score: %.2f)", score)
 			streamSimulatedResponse(w, answer)
-			return 
+			return
 		}
 	}
 
-	// --- 🚀 3. SOVEREIGN ROUTER (INTELLIGENT ORCHESTRATION) ---
+	// --- 🚀 3. SOVEREIGN ROUTER ---
 	provider := GetProvider(userReq.Model)
 	var activeKey string
 	modelLower := strings.ToLower(userReq.Model)
 
-	// Resolve API Key Priority
 	switch {
 	case strings.Contains(modelLower, "deepseek"):
 		activeKey = cfg.DeepSeekKey
@@ -479,8 +498,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 		if userOpenAIKey != "" { activeKey = userOpenAIKey }
 	}
 
-	// Build Native Request via Adapter
-	req, err := provider.PrepareRequest(userReq.Message, userReq.Model, activeKey, "v1")
+	// PASSING FULL HISTORY TO ADAPTER
+	req, err := provider.PrepareRequest(userReq.Messages, userReq.Model, activeKey, "v1")
 	if err != nil {
 		log.Printf("❌ [ROUTER ERROR] %v", err)
 		return
@@ -490,48 +509,33 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 90 * time.Second}
 	resp, err := client.Do(req)
 
-	// Self-Healing for Gemini Models
 	if strings.Contains(modelLower, "gemini") && (err != nil || (resp != nil && resp.StatusCode == 404)) {
-		log.Printf("🔄 [HEALING] Path failed. Attempting Adaptive Discovery...")
 		workingModel := DiscoverWorkingModel(activeKey)
 		discoveredModelMap.Store(activeKey, workingModel)
-		req, _ = provider.PrepareRequest(userReq.Message, workingModel, activeKey, "v1beta")
+		req, _ = provider.PrepareRequest(userReq.Messages, workingModel, activeKey, "v1beta")
 		resp, err = client.Do(req)
 	}
 
 	if err != nil || (resp != nil && resp.StatusCode != 200) {
-		errorBody := "Inference Failed"
-		if resp != nil {
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			errorBody = string(bodyBytes)
-		}
-		log.Printf("❌ [PROVIDER ERROR] Status: %d | Body: %s", resp.StatusCode, errorBody)
 		fmt.Fprintf(w, "data: {\"error\": \"Provider unavailable\"}\n\n")
 		return
 	}
 	defer resp.Body.Close()
-	log.Printf("📡 [STREAM] %T Connected. Piping data...", provider)
 
-	// --- 🚀 5. UNIFIED STREAM PARSER & OUTPUT ---
+	// --- 🚀 5. UNIFIED STREAM PARSER ---
 	scanner := bufio.NewScanner(resp.Body)
 	var fullResponseBuilder strings.Builder
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" { continue }
-
-		// Use the Adapter's parser to handle model-specific JSON
 		extracted, isDone := provider.ParseStreamChunk(line)
-		
 		if isDone {
 			fmt.Fprintf(w, "data: [DONE]\n\n")
 			break
 		}
-
 		if extracted != "" {
 			fullResponseBuilder.WriteString(extracted)
-			
-			// Format to OpenAI-standard JSON for frontend compatibility
 			formatted := map[string]any{
 				"choices": []map[string]any{
 					{"delta": map[string]string{"content": extracted}},
@@ -539,37 +543,30 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 			}
 			jsonChunk, _ := json.Marshal(formatted)
 			fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-			
 			if f, ok := w.(http.Flusher); ok { f.Flush() }
 		}
 	}
 
-	// --- 💾 6. LEDGER & TELEMETRY (ASYNC) ---
+	// --- 💾 6. LEDGER & TELEMETRY ---
 	finalText := fullResponseBuilder.String()
 	if finalText != "" {
 		go func(reply string, v []float32) {
-			pT, rT, cost := provider.GetPricing(userReq.Message, reply, userReq.Model)
+			pT, rT, cost := provider.GetPricing(currentPrompt, reply, userReq.Model)
 			latency := int(time.Since(startTime).Milliseconds())
 
-			// 1. Log to DB
-			LogRequest(userKey, userReq.Model, 200, false, pT, rT, cost, latency, userReq.Message, reply, triggeredRule, govAction)
-			
-			// 2. Exact Cache
-			if redisClient != nil { 
-				redisClient.Set(ctx, "exact:"+msgHash, reply, 24*time.Hour) 
+			LogRequest(userKey, userReq.Model, 200, false, pT, rT, cost, latency, currentPrompt, reply, triggeredRule, govAction)
+			if redisClient != nil {
+				redisClient.Set(ctx, "exact:"+msgHash, reply, 24*time.Hour)
 			}
-			
-			// 3. Semantic Memory (Pinecone Hybrid)
 			if v != nil {
-				sparseIndices, sparseValues := GenerateSparseVector(userReq.Message)
+				sparseIndices, sparseValues := GenerateSparseVector(currentPrompt)
 				SaveToPineconeHybrid(cfg.PineconeHost, cfg.PineconeKey, intentKey, v, sparseIndices, sparseValues, reply)
-				log.Println("💾 [DEBUG] Data saved to Pinecone Hybrid Cache")
 			}
 		}(finalText, vector)
 	}
 }
 
-// --- HELPERS ---
+// --- 🛠️ SOVEREIGN HELPERS ---
 
 func getStreamAPIKey(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
