@@ -50,8 +50,25 @@ func CheckUserLimit(apiKey string) (bool, error) {
 	return used < limit, err
 }
 
+// func IncrementUsage(apiKey string) {
+// 	go db.Exec(context.Background(), "UPDATE users SET requests_used = requests_used + 1 WHERE api_key=$1", apiKey)
+// }
+
 func IncrementUsage(apiKey string) {
-	go db.Exec(context.Background(), "UPDATE users SET requests_used = requests_used + 1 WHERE api_key=$1", apiKey)
+    if db == nil { return }
+    
+    // 🔥 FIX: Remove 'go' to ensure the DB write happens immediately.
+    // We use context.Background() so it doesn't die if the request finishes.
+    _, err := db.Exec(context.Background(), 
+        "UPDATE users SET requests_used = requests_used + 1 WHERE api_key=$1", 
+        apiKey,
+    )
+    
+    if err != nil {
+        log.Printf("🚨 Critical: Failed to increment usage for %s: %v", apiKey, err)
+    } else {
+        log.Printf("📊 Usage Incremented for Key: %s", apiKey)
+    }
 }
 
 
