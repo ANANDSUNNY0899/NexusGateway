@@ -55,22 +55,32 @@ func CheckUserLimit(apiKey string) (bool, error) {
 // }
 
 func IncrementUsage(apiKey string) {
-    if db == nil { return }
-    
-    // 🔥 FIX: Remove 'go' to ensure the DB write happens immediately.
-    // We use context.Background() so it doesn't die if the request finishes.
-    _, err := db.Exec(context.Background(), 
+    if db == nil { 
+        log.Println("🚨 Sovereign Error: DB Pool is NIL. Usage not tracked.")
+        return 
+    }
+
+    // 🛡️ THE CRITICAL SYNC: No 'go' keyword. 
+    // We wait for Postgres to confirm the write before the HTTP response ends.
+    // Using context.Background() ensures the update finishes even if the user closes the tab.
+    result, err := db.Exec(context.Background(), 
         "UPDATE users SET requests_used = requests_used + 1 WHERE api_key=$1", 
         apiKey,
     )
-    
+
     if err != nil {
-        log.Printf("🚨 Critical: Failed to increment usage for %s: %v", apiKey, err)
+        log.Printf("🚨 SQL Error: Failed to increment usage for %s: %v", apiKey, err)
+        return
+    }
+
+    // 🔍 INTEGRITY CHECK: Did we actually find this user?
+    rows := result.RowsAffected()
+    if rows == 0 {
+        log.Printf("⚠️ Governance Warning: API Key [%s] not found. No usage recorded.", apiKey)
     } else {
-        log.Printf("📊 Usage Incremented for Key: %s", apiKey)
+        log.Printf("📊 Usage Successfully Incremented for Key: %s", apiKey)
     }
 }
-
 
 
 func UpgradeUser(apiKey string) {

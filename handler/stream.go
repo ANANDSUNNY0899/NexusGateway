@@ -550,6 +550,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	// --- 💾 6. LEDGER & TELEMETRY ---
 	finalText := fullResponseBuilder.String()
 	if finalText != "" {
+		IncrementUsage(userKey)
 		go func(reply string, v []float32) {
 			pT, rT, cost := provider.GetPricing(currentPrompt, reply, userReq.Model)
 			latency := int(time.Since(startTime).Milliseconds())
