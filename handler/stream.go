@@ -209,7 +209,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
         if extracted != "" {
             fullResponseBuilder.WriteString(extracted)
 
-            // Structure specifically for the Nexus SDK Python Parser
+            // 🔍 Ensure these keys are exactly lowercase
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -223,7 +223,6 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             jsonChunk, _ := json.Marshal(formatted)
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
             
-            // Push the chunk immediately
             if f != nil { f.Flush() }
         }
     }
