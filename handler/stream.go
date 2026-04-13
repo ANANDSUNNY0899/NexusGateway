@@ -205,9 +205,11 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
         }
 
         // 🔥 THE FIX: Use strings.TrimSpace to ensure we don't send empty packets
-        if strings.TrimSpace(extracted) != "" {
+        if extracted != "" {
+            // 1. Log to builder for internal tracking
             fullResponseBuilder.WriteString(extracted)
 
+            // 2. Package for the Nexus Protocol
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -219,9 +221,15 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             }
 
             jsonChunk, _ := json.Marshal(formatted)
+            
+            // 3. WRITE THE DATA
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
             
-            if f != nil { f.Flush() }
+            // 4. 🔥 THE CRITICAL PUSH
+            // This MUST happen inside the 'if extracted != ""' block
+            if f != nil {
+                f.Flush() 
+            }
         }
     }
 
