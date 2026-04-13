@@ -33,29 +33,39 @@ func (a *GroqAdapter) PrepareRequest(messages []Message, model, key, version str
 }
 
 func (a *GroqAdapter) ParseStreamChunk(line string) (string, bool) {
-	if line == "data: [DONE]" {
-		return "", true
-	}
-	if !strings.HasPrefix(line, "data: ") {
-		return "", false
-	}
+    // 1. Handle the End of Stream
+    if strings.Contains(line, "[DONE]") {
+        return "", true
+    }
 
-	var chunk struct {
-		Choices []struct {
-			Delta struct {
-				Content string `json:"content"`
-			} `json:"delta"`
-		} `json:"choices"`
-	}
+    // 2. Clean the SSE prefix
+    rawJSON := strings.TrimPrefix(line, "data: ")
+    rawJSON = strings.TrimSpace(rawJSON)
 
-	if err := json.Unmarshal([]byte(line[6:]), &chunk); err != nil {
-		return "", false
-	}
+    if rawJSON == "" {
+        return "", false
+    }
 
-	if len(chunk.Choices) > 0 {
-		return chunk.Choices[0].Delta.Content, false
-	}
-	return "", false
+    // 3. Define the exact Groq Schema
+    var chunk struct {
+        Choices []struct {
+            Delta struct {
+                Content string `json:"content"`
+            } `json:"delta"`
+        } `json:"choices"`
+    }
+
+    // 4. Parse
+    if err := json.Unmarshal([]byte(rawJSON), &chunk); err != nil {
+        // If it's not JSON, it's a heartbeat or error, skip it
+        return "", false
+    }
+
+    if len(chunk.Choices) > 0 {
+        return chunk.Choices[0].Delta.Content, false
+    }
+
+    return "", false
 }
 
 func (a *GroqAdapter) GetPricing(p, r, m string) (int, int, float64) {
