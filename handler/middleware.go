@@ -126,6 +126,15 @@ func respondWithError(w http.ResponseWriter, msg string, code int) {
     json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
+// 2. RATE LIMIT MIDDLEWARE: Satisfies the compiler reference in main.go
+func RateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Currently a pass-through to ensure the build completes.
+		// You can re-integrate Redis-based limiting after the demo.
+		next(w, r)
+	}
+}
+
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         authHeader := r.Header.Get("Authorization")
