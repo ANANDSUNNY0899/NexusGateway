@@ -1,37 +1,5 @@
 
 
-// package handler
-
-// import "strings"
-
-// func GetProvider(model string) AIProvider {
-//     m := strings.ToLower(model)
-
-//     // 🚀 ALIASING: The "Intelligent" Choice
-//     if m == "nexus-smart" || m == "nexus-auto" {
-//         return &DeepSeekAdapter{} // Highest intelligence per dollar
-//     }
-//     if m == "nexus-fast" {
-//         return &OpenAIAdapter{} // Usually routes to Groq/Llama
-//     }
-
-//     switch {
-//     case strings.Contains(m, "gemini"):
-//         return &GeminiAdapter{}
-//     case strings.Contains(m, "deepseek"):
-//         return &DeepSeekAdapter{}
-//     case strings.Contains(m, "claude") || strings.Contains(m, "anthropic"):
-//         return &AnthropicAdapter{}
-//     case strings.Contains(m, "gpt") || strings.Contains(m, "openai"):
-//         return &OpenAIAdapter{}
-//     default:
-//         // Default to OpenAI adapter for generic Llama/Mistral models
-//         return &OpenAIAdapter{}
-//     }
-// }
-
-
-
 package handler
 
 import (
@@ -48,30 +16,32 @@ type AIProvider interface {
 }
 
 func GetProvider(model string) AIProvider {
-	m := strings.ToLower(model)
+    m := strings.ToLower(model)
 
-	// 🚀 ALIASING: The "Intelligent" Choice
-	// These routes prioritize DeepSeek-R1 for complex reasoning
-	if m == "nexus-smart" || m == "nexus-auto" {
-		return &DeepSeekAdapter{} 
-	}
-	
-	// Fast routes go to Groq/Llama via the OpenAI-compatible adapter
-	if m == "nexus-fast" {
-		return &OpenAIAdapter{} 
-	}
+    // 🚀 ALIASING: The "Intelligent" Choice
+    if m == "nexus-smart" || m == "nexus-auto" {
+        return &DeepSeekAdapter{} 
+    }
+    
+    // Fast routes go to Groq/Llama
+    if m == "nexus-fast" {
+        return &GroqAdapter{} 
+    }
 
-	switch {
-	case strings.Contains(m, "gemini"):
-		return &GeminiAdapter{}
-	case strings.Contains(m, "deepseek"):
-		return &DeepSeekAdapter{}
-	case strings.Contains(m, "claude") || strings.Contains(m, "anthropic"):
-		return &AnthropicAdapter{}
-	case strings.Contains(m, "gpt") || strings.Contains(m, "openai"):
-		return &OpenAIAdapter{}
-	default:
-		// Default for Llama/Mistral models (Groq-compatible)
-		return &OpenAIAdapter{}
-	}
+    switch {
+    case strings.Contains(m, "gemini"):
+        return &GeminiAdapter{}
+    case strings.Contains(m, "deepseek"):
+        return &DeepSeekAdapter{}
+    case strings.Contains(m, "claude") || strings.Contains(m, "anthropic"):
+        return &AnthropicAdapter{}
+    case strings.Contains(m, "gpt") || strings.Contains(m, "openai"):
+        return &OpenAIAdapter{}
+    // 🔥 ADD THIS CASE for Llama/Mistral (Groq)
+    case strings.Contains(m, "llama") || strings.Contains(m, "mixtral"):
+        return &GroqAdapter{} 
+    default:
+        // Defaulting to GroqAdapter for high-speed fallback
+        return &GroqAdapter{}
+    }
 }
