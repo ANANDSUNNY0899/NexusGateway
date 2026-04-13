@@ -204,12 +204,11 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             break
         }
 
-        // 🔥 THE GATEKEEPER: Only proceed if we have actual text
+        // 🔥 THE GATEKEEPER: Don't send empty chunks
         if extracted != "" {
-            // Keep a record of the full response for logging/history
             fullResponseBuilder.WriteString(extracted)
 
-            // Wrap the extraction in the structure the Python SDK expects
+            // Ensure these keys are LOWERCASE to match Python's .get("choices")
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -222,14 +221,13 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
             jsonChunk, _ := json.Marshal(formatted)
             
-            // Send the data line
+            // 📡 Write SSE format
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
             
-            // Force the buffer to clear so the user sees it in real-time
-            if f != nil {
-                f.Flush()
-            }
+            // 🚀 Flush immediately to the terminal
+            if f != nil { f.Flush() }
         }
+    }
     }
 
     if err := scanner.Err(); err != nil {
