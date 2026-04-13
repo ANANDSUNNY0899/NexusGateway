@@ -33,26 +33,27 @@ func (a *GroqAdapter) PrepareRequest(messages []Message, model, key, version str
 }
 
 func (a *GroqAdapter) ParseStreamChunk(line string) (string, bool) {
+    // 1. Detect End of Stream
     if strings.Contains(line, "[DONE]") {
         return "", true
     }
 
-    // 1. Clean the SSE prefix
-    raw := strings.TrimPrefix(line, "data: ")
-    raw = strings.TrimSpace(raw)
-    if raw == "" { return "", false }
+    // 2. Remove the SSE Prefix
+    rawJSON := strings.TrimPrefix(line, "data: ")
+    rawJSON = strings.TrimSpace(rawJSON)
+    if rawJSON == "" { return "", false }
 
-    // 2. Exact Groq/OpenAI Schema
+    // 3. Define the Schema (Strict lowercase for Groq/Llama)
     var chunk struct {
         Choices []struct {
             Delta struct {
-                Content string `json:"content"` // 🔥 MUST BE LOWERCASE
+                Content string `json:"content"` // 🔥 MUST be lowercase
             } `json:"delta"`
-        } `json:"choices"`
+        } `json:"choices"` // 🔥 MUST be lowercase
     }
 
-    if err := json.Unmarshal([]byte(raw), &chunk); err != nil {
-        return "", false 
+    if err := json.Unmarshal([]byte(rawJSON), &chunk); err != nil {
+        return "", false
     }
 
     if len(chunk.Choices) > 0 {
