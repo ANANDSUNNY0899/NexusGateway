@@ -184,32 +184,30 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
     
 	// --- 🚀 5. UNIFIED STREAM PARSER ---
-    // 1. Initialize Scanner & Infrastructure
-    scanner := bufio.NewScanner(resp.Body)
-    buf := make([]byte, 0, 64*1024)
+    // Use '=' instead of ':=' because these variables likely exist above
+    scanner = bufio.NewScanner(resp.Body) 
+    buf = make([]byte, 0, 64*1024)
     scanner.Buffer(buf, 1024*1024) 
 
-    var fullResponseBuilder strings.Builder
-    flusher, _ := w.(http.Flusher) // Using _ fixes the 'isFlusher' unused error
+    // Use a fresh name for the flusher if 'flusher' was used earlier
+    // or just use the assignment if already declared
+    f, _ := w.(http.Flusher) 
 
-    // 2. The Streaming Loop
     for scanner.Scan() {
-        line := scanner.Text()
+        line := scanner.Text() 
         if line == "" { continue }
 
-        // Extract text using the provider's specific logic
         extracted, isDone := provider.ParseStreamChunk(line)
         
         if isDone {
             fmt.Fprintf(w, "data: [DONE]\n\n")
-            if flusher != nil { flusher.Flush() }
+            if f != nil { f.Flush() }
             break
         }
 
         if extracted != "" {
             fullResponseBuilder.WriteString(extracted)
 
-            // Structure specifically for the Nexus SDK Python Parser
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -222,14 +220,9 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
             jsonChunk, _ := json.Marshal(formatted)
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-
-            // Push the chunk immediately to the client
-            if flusher != nil { flusher.Flush() }
+            
+            if f != nil { f.Flush() }
         }
-    }
-
-    if err := scanner.Err(); err != nil {
-        log.Printf("🚨 Scanner Error: %v", err)
     }
 
 	// --- 💾 6. LEDGER & TELEMETRY ---
