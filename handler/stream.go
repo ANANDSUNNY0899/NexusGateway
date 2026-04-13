@@ -192,21 +192,31 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
     flusher, isFlusher := w.(http.Flusher)
 
     // --- 🚀 5. UNIFIED STREAM PARSER ---
+    scanner := bufio.NewScanner(resp.Body)
+    buf := make([]byte, 0, 64*1024)
+    scanner.Buffer(buf, 1024*1024) 
+
+    var fullResponseBuilder strings.Builder
+    
+    // 🔥 CHANGE: Use the blank identifier '_' because we don't need the boolean here
+    flusher, _ := w.(http.Flusher) 
+
     for scanner.Scan() {
         line := scanner.Text()
         if line == "" { continue }
 
-        // Use the provider adapter to extract the text
         extracted, isDone := provider.ParseStreamChunk(line)
         
         if isDone {
             fmt.Fprintf(w, "data: [DONE]\n\n")
-            if flusher, ok := w.(http.Flusher); ok { flusher.Flush() }
+            // Use the flusher we captured above safely
+            if flusher != nil { flusher.Flush() }
             break
         }
 
-        // 🔥 CRITICAL: If extracted is empty, don't send a chunk!
         if extracted != "" {
+            fullResponseBuilder.WriteString(extracted) // Good for logging later
+
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -220,7 +230,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             jsonChunk, _ := json.Marshal(formatted)
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
             
-            if flusher, ok := w.(http.Flusher); ok { flusher.Flush() }
+            // 🔥 Use the captured flusher
+            if flusher != nil { flusher.Flush() }
         }
     }
 
