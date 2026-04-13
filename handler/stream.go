@@ -191,6 +191,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
     var fullResponseBuilder strings.Builder
     flusher, isFlusher := w.(http.Flusher)
 
+    // --- 🚀 5. UNIFIED STREAM PARSER ---
     for scanner.Scan() {
         line := scanner.Text()
         if line == "" { continue }
@@ -200,21 +201,17 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
         
         if isDone {
             fmt.Fprintf(w, "data: [DONE]\n\n")
-            if isFlusher { flusher.Flush() }
+            if flusher, ok := w.(http.Flusher); ok { flusher.Flush() }
             break
         }
 
+        // 🔥 CRITICAL: If extracted is empty, don't send a chunk!
         if extracted != "" {
-            fullResponseBuilder.WriteString(extracted)
-
-            // 🏛️ Structure specifically for the Nexus SDK Python Parser
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
                         "delta": map[string]any{
                             "content": extracted,
-                            // If this is DeepSeek, the adapter should handle reasoning_content 
-                            // but we ensure it matches the OpenAI 'delta' spec here
                         },
                     },
                 },
@@ -222,9 +219,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
             jsonChunk, _ := json.Marshal(formatted)
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-
-            // 🔥 FORCE PUSH TO SDK
-            if isFlusher { flusher.Flush() }
+            
+            if flusher, ok := w.(http.Flusher); ok { flusher.Flush() }
         }
     }
 
