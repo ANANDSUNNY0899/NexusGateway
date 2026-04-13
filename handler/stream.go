@@ -195,9 +195,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
     // 2. Start the Streaming Loop
     for scanner.Scan() {
         line := scanner.Text()
-        if line == "" { continue }
+        if strings.TrimSpace(line) == "" { continue }
 
-        // Use the provider adapter to extract the text
         extracted, isDone := provider.ParseStreamChunk(line)
         
         if isDone {
@@ -206,10 +205,11 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             break
         }
 
-        if extracted != "" {
+        // 🔥 THE GATEKEEPER: Only send if we actually have text!
+        // If extracted is "", skip this entire iteration.
+        if len(strings.TrimSpace(extracted)) > 0 {
             fullResponseBuilder.WriteString(extracted)
 
-            // 🔍 Ensure these keys are exactly lowercase
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -224,6 +224,9 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
             
             if f != nil { f.Flush() }
+        } else {
+            // 🔍 DEBUG: Uncomment this in Railway to see why chunks are empty
+            // log.Printf("Raw Line from Provider: %s", line)
         }
     }
 
