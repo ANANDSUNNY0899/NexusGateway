@@ -115,11 +115,11 @@ package handler
 
 import (
     "encoding/json"
-    "log"
-    "net"
+    // "log"
+    // "net"
     "net/http"
     "strings"
-    "time"
+    //"time"
 )
 
 func respondWithError(w http.ResponseWriter, msg string, code int) {
