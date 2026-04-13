@@ -191,18 +191,20 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
     var fullResponseBuilder strings.Builder
     flusher, isFlusher := w.(http.Flusher)
 
-    // --- 🚀 5. UNIFIED STREAM PARSER ---
-    // 1. Initialize Scanner & Buffer
+    
+	// --- 🚀 5. UNIFIED STREAM PARSER ---
+    // Use a custom scanner with a larger buffer (important for long R1 reasoning tokens)
     scanner := bufio.NewScanner(resp.Body)
     buf := make([]byte, 0, 64*1024)
     scanner.Buffer(buf, 1024*1024) 
 
     var fullResponseBuilder strings.Builder
-    flusher, _ := w.(http.Flusher) // Use '_' to avoid "isFlusher declared and not used"
+    
+    // Fix: Use '_' because we only need the interface, not the boolean 'ok'
+    flusher, _ := w.(http.Flusher)
 
-    // 2. Start the Scan Loop
     for scanner.Scan() {
-        line := scanner.Text() // Re-using 'line' is fine here as it's scoped to the loop
+        line := scanner.Text()
         if line == "" { continue }
 
         // Use the provider adapter to extract the text
@@ -217,6 +219,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
         if extracted != "" {
             fullResponseBuilder.WriteString(extracted)
 
+            // Structure specifically for the Nexus SDK Python Parser
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -229,7 +232,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
             jsonChunk, _ := json.Marshal(formatted)
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-            
+
+            // 🔥 FORCE PUSH TO SDK
             if flusher != nil { flusher.Flush() }
         }
     }
@@ -237,7 +241,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
     if err := scanner.Err(); err != nil {
         log.Printf("🚨 Scanner Error: %v", err)
     }
-
+	
 	// --- 💾 6. LEDGER & TELEMETRY ---
 	finalText := fullResponseBuilder.String()
 	if finalText != "" {
