@@ -3,14 +3,13 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 )
 
+// GroqAdapter implements the AIProvider interface
 type GroqAdapter struct{}
 
-// 1. PrepareRequest: Logic to build the Groq API call
 func (a *GroqAdapter) PrepareRequest(messages []Message, model, key, version string) (*http.Request, error) {
 	payload := map[string]interface{}{
 		"model":    model,
@@ -18,7 +17,11 @@ func (a *GroqAdapter) PrepareRequest(messages []Message, model, key, version str
 		"stream":   true,
 	}
 
-	jsonData, _ := json.Marshal(payload)
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
 	req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
@@ -29,7 +32,6 @@ func (a *GroqAdapter) PrepareRequest(messages []Message, model, key, version str
 	return req, nil
 }
 
-// 2. ParseStreamChunk: Your existing logic (Keep this as is)
 func (a *GroqAdapter) ParseStreamChunk(line string) (string, bool) {
 	if line == "data: [DONE]" {
 		return "", true
@@ -56,11 +58,10 @@ func (a *GroqAdapter) ParseStreamChunk(line string) (string, bool) {
 	return "", false
 }
 
-// 3. GetPricing: Logic for telemetry/logging
 func (a *GroqAdapter) GetPricing(p, r, m string) (int, int, float64) {
-	promptTokens := len(p) / 4 // Rough estimation
+	promptTokens := len(p) / 4
 	resTokens := len(r) / 4
-	// Groq Llama 3.3 70b is extremely cheap, usually ~$0.59/1M tokens
+	// Groq Llama 3.3 70b pricing
 	cost := (float64(promptTokens+resTokens) / 1000000.0) * 0.59
 	return promptTokens, resTokens, cost
 }
