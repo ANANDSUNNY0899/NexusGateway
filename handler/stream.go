@@ -182,32 +182,22 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+    
 	// --- 🚀 5. UNIFIED STREAM PARSER ---
-    // Use a custom scanner with a larger buffer (important for long R1 reasoning tokens)
+    // 1. Initialize Scanner & Infrastructure
     scanner := bufio.NewScanner(resp.Body)
     buf := make([]byte, 0, 64*1024)
     scanner.Buffer(buf, 1024*1024) 
 
     var fullResponseBuilder strings.Builder
-    flusher, isFlusher := w.(http.Flusher)
+    flusher, _ := w.(http.Flusher) // Using _ fixes the 'isFlusher' unused error
 
-    
-	// --- 🚀 5. UNIFIED STREAM PARSER ---
-    // Use a custom scanner with a larger buffer (important for long R1 reasoning tokens)
-    scanner := bufio.NewScanner(resp.Body)
-    buf := make([]byte, 0, 64*1024)
-    scanner.Buffer(buf, 1024*1024) 
-
-    var fullResponseBuilder strings.Builder
-    
-    // Fix: Use '_' because we only need the interface, not the boolean 'ok'
-    flusher, _ := w.(http.Flusher)
-
+    // 2. The Streaming Loop
     for scanner.Scan() {
         line := scanner.Text()
         if line == "" { continue }
 
-        // Use the provider adapter to extract the text
+        // Extract text using the provider's specific logic
         extracted, isDone := provider.ParseStreamChunk(line)
         
         if isDone {
@@ -233,7 +223,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             jsonChunk, _ := json.Marshal(formatted)
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
 
-            // 🔥 FORCE PUSH TO SDK
+            // Push the chunk immediately to the client
             if flusher != nil { flusher.Flush() }
         }
     }
@@ -241,7 +231,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
     if err := scanner.Err(); err != nil {
         log.Printf("🚨 Scanner Error: %v", err)
     }
-	
+
 	// --- 💾 6. LEDGER & TELEMETRY ---
 	finalText := fullResponseBuilder.String()
 	if finalText != "" {
