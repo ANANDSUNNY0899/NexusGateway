@@ -204,12 +204,12 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
             break
         }
 
-        // 🔥 THE FIX: Use strings.TrimSpace to ensure we don't send empty packets
+        // 🔥 THE GATEKEEPER: Only proceed if we have actual text
         if extracted != "" {
-            // 1. Log to builder for internal tracking
+            // Keep a record of the full response for logging/history
             fullResponseBuilder.WriteString(extracted)
 
-            // 2. Package for the Nexus Protocol
+            // Wrap the extraction in the structure the Python SDK expects
             formatted := map[string]any{
                 "choices": []map[string]any{
                     {
@@ -222,13 +222,12 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
             jsonChunk, _ := json.Marshal(formatted)
             
-            // 3. WRITE THE DATA
+            // Send the data line
             fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
             
-            // 4. 🔥 THE CRITICAL PUSH
-            // This MUST happen inside the 'if extracted != ""' block
+            // Force the buffer to clear so the user sees it in real-time
             if f != nil {
-                f.Flush() 
+                f.Flush()
             }
         }
     }
