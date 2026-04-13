@@ -44,18 +44,35 @@ func (g *GeminiAdapter) PrepareRequest(messages []Message, model, key, version s
     return req, nil
 }
 
-func (g *GeminiAdapter) ParseStreamChunk(line string) (string, bool) {
-	cleanLine := strings.TrimSpace(line)
-	if !strings.HasPrefix(cleanLine, "data: ") { return "", false }
-	cleanLine = strings.TrimPrefix(cleanLine, "data: ")
-	
-	var resp gemini.GeminiResponse
-	if err := json.Unmarshal([]byte(cleanLine), &resp); err == nil && len(resp.Candidates) > 0 {
-		if len(resp.Candidates[0].Content.Parts) > 0 {
-			return resp.Candidates[0].Content.Parts[0].Text, false
-		}
-	}
-	return "", false
+func (a *GeminiAdapter) ParseStreamChunk(line string) (string, bool) {
+    // 1. Clean the line
+    line = strings.TrimSpace(line)
+    if line == "" || line == "[" || line == "]" || line == "," {
+        return "", false
+    }
+
+    // 2. Define Gemini's specific JSON Schema
+    var chunk struct {
+        Candidates []struct {
+            Content struct {
+                Parts []struct {
+                    Text string `json:"text"`
+                } `json:"parts"`
+            } `json:"content"`
+        } `json:"candidates"`
+    }
+
+    // 3. Parse the raw JSON
+    if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+        return "", false
+    }
+
+    // 4. Extract the nested text
+    if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Content.Parts) > 0 {
+        return chunk.Candidates[0].Content.Parts[0].Text, false
+    }
+
+    return "", false
 }
 
 // 🚀 FIXED: Added missing GetPricing method
