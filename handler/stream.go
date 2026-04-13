@@ -33,35 +33,47 @@ type ChatRequest struct {
 // --- MAIN HANDLER ---
 
 func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
-	startTime := time.Now()
-	cfg := config.LoadConfig()
-	ctx := context.Background()
-	userKey := getStreamAPIKey(r)
-	redisClient := GetClient()
+    startTime := time.Now()
+    cfg := config.LoadConfig()
+    ctx := context.Background()
+    userKey := getStreamAPIKey(r)
+    redisClient := GetClient() // Only call this once
 
-	// Set Professional SSE Headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+    // 1. SET HEADERS (The Foundation)
+    w.Header().Set("Content-Type", "text/event-stream")
+    w.Header().Set("X-Accel-Buffering", "no")
+    w.Header().Set("Cache-Control", "no-cache")
+    w.Header().Set("Connection", "keep-alive")
+    w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	var userReq ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
-		return
-	}
+    // 2. DECODE REQUEST (Crucial: Do this before priming the pipe)
+    var userReq ChatRequest
+    if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
+        LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
+        w.WriteHeader(http.StatusBadRequest) // Send 400 if JSON is trash
+        return
+    }
 
-	// 🧠 MEMORY LOGIC: Extract the newest message
-	if len(userReq.Messages) == 0 {
-		return
-	}
-	latestIdx := len(userReq.Messages) - 1
-	currentPrompt := userReq.Messages[latestIdx].Content
+    // 3. PRIME THE PIPE (The Handshake)
+    flusher, ok := w.(http.Flusher)
+    if !ok {
+        http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+        return
+    }
 
-	if userReq.Model == "" {
-		userReq.Model = "llama-3.3-70b-versatile"
-	}
+    // Now we officially start the 200 stream
+    w.WriteHeader(http.StatusOK)
+    fmt.Fprintf(w, ": nexus-handshake-active\n\n")
+    flusher.Flush() 
+
+    // 4. MEMORY LOGIC & PROMPT EXTRACTION
+    if len(userReq.Messages) == 0 { return }
+    latestIdx := len(userReq.Messages) - 1
+    currentPrompt := userReq.Messages[latestIdx].Content
+
+    if userReq.Model == "" {
+        userReq.Model = "llama-3.3-70b-versatile"
+    }
 
 	// 1. CAPTURE BYOK & AUTH HEADERS
 	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
