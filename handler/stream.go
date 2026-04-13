@@ -1,4 +1,3 @@
-
 package handler
 
 import (
@@ -7,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	
+
 	"log"
 	"net/http"
 	"strings"
@@ -20,7 +19,7 @@ var discoveredModelMap = sync.Map{}
 
 /* // UNCOMMENT ONLY IF YOU DELETED THESE FROM types.go
 type Message struct {
-	Role    string `json:"role"`    
+	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
@@ -33,47 +32,49 @@ type ChatRequest struct {
 // --- MAIN HANDLER ---
 
 func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
-    startTime := time.Now()
-    cfg := config.LoadConfig()
-    ctx := context.Background()
-    userKey := getStreamAPIKey(r)
-    redisClient := GetClient() // Only call this once
+	startTime := time.Now()
+	cfg := config.LoadConfig()
+	ctx := context.Background()
+	userKey := getStreamAPIKey(r)
+	redisClient := GetClient() // Only call this once
 
-    // 1. SET HEADERS (The Foundation)
-    w.Header().Set("Content-Type", "text/event-stream")
-    w.Header().Set("X-Accel-Buffering", "no")
-    w.Header().Set("Cache-Control", "no-cache")
-    w.Header().Set("Connection", "keep-alive")
-    w.Header().Set("Access-Control-Allow-Origin", "*")
+	// 1. SET HEADERS (The Foundation)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-    // 2. DECODE REQUEST (Crucial: Do this before priming the pipe)
-    var userReq ChatRequest
-    if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
-        LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
-        w.WriteHeader(http.StatusBadRequest) // Send 400 if JSON is trash
-        return
-    }
+	// 2. DECODE REQUEST (Crucial: Do this before priming the pipe)
+	var userReq ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&userReq); err != nil {
+		LogRequest(userKey, "unknown", 400, false, 0, 0, 0, 0, "", "", "NONE", "FAILED")
+		w.WriteHeader(http.StatusBadRequest) // Send 400 if JSON is trash
+		return
+	}
 
-    // 3. PRIME THE PIPE (The Handshake)
-    flusher, ok := w.(http.Flusher)
-    if !ok {
-        http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-        return
-    }
+	// 3. PRIME THE PIPE (The Handshake)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
 
-    // Now we officially start the 200 stream
-    w.WriteHeader(http.StatusOK)
-    fmt.Fprintf(w, ": nexus-handshake-active\n\n")
-    flusher.Flush() 
+	// Now we officially start the 200 stream
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, ": nexus-handshake-active\n\n")
+	flusher.Flush()
 
-    // 4. MEMORY LOGIC & PROMPT EXTRACTION
-    if len(userReq.Messages) == 0 { return }
-    latestIdx := len(userReq.Messages) - 1
-    currentPrompt := userReq.Messages[latestIdx].Content
+	// 4. MEMORY LOGIC & PROMPT EXTRACTION
+	if len(userReq.Messages) == 0 {
+		return
+	}
+	latestIdx := len(userReq.Messages) - 1
+	currentPrompt := userReq.Messages[latestIdx].Content
 
-    if userReq.Model == "" {
-        userReq.Model = "llama-3.3-70b-versatile"
-    }
+	if userReq.Model == "" {
+		userReq.Model = "llama-3.3-70b-versatile"
+	}
 
 	// 1. CAPTURE BYOK & AUTH HEADERS
 	userOpenAIKey := r.Header.Get("x-nexus-openai-key")
@@ -94,7 +95,7 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 
 	// Apply redaction to the message slice for the AI to see
 	userReq.Messages[latestIdx].Content = gov.ModifiedText
-	currentPrompt = gov.ModifiedText 
+	currentPrompt = gov.ModifiedText
 	govAction := "PERMITTED"
 	triggeredRule := "NONE"
 	if gov.RuleID != "NONE" {
@@ -146,16 +147,24 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(modelLower, "deepseek"):
 		activeKey = cfg.DeepSeekKey
-		if userDeepSeekKey != "" { activeKey = userDeepSeekKey }
+		if userDeepSeekKey != "" {
+			activeKey = userDeepSeekKey
+		}
 	case strings.Contains(modelLower, "gemini"):
 		activeKey = cfg.GeminiKey
-		if userGeminiKey != "" { activeKey = userGeminiKey }
+		if userGeminiKey != "" {
+			activeKey = userGeminiKey
+		}
 	case strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral"):
 		activeKey = cfg.GroqKey
-		if userGroqKey != "" { activeKey = userGroqKey }
+		if userGroqKey != "" {
+			activeKey = userGroqKey
+		}
 	default:
 		activeKey = cfg.OpenAIKey
-		if userOpenAIKey != "" { activeKey = userOpenAIKey }
+		if userOpenAIKey != "" {
+			activeKey = userOpenAIKey
+		}
 	}
 
 	// PASSING FULL HISTORY TO ADAPTER
@@ -182,57 +191,56 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-    
 	// --- 🚀 5. UNIFIED STREAM PARSER ---
-    // 1. Initialize Scanner & Buffer with explicit declarations (:=)
-    scanner := bufio.NewScanner(resp.Body)
-    buf := make([]byte, 0, 64*1024)
-    scanner.Buffer(buf, 1024*1024) 
+	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
 
-    var fullResponseBuilder strings.Builder
-    f, _ := w.(http.Flusher) // Using 'f' avoids any conflicts with 'flusher'
+	var fullResponseBuilder strings.Builder
+	f, _ := w.(http.Flusher)
 
-    for scanner.Scan() {
-        line := scanner.Text()
-        if line == "" { continue }
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
 
-        extracted, isDone := provider.ParseStreamChunk(line)
-        
-        if isDone {
-            fmt.Fprintf(w, "data: [DONE]\n\n")
-            if f != nil { f.Flush() }
-            break
-        }
+		extracted, isDone := provider.ParseStreamChunk(line)
 
-        // 🔥 THE GATEKEEPER: Don't send empty chunks
-        if extracted != "" {
-            fullResponseBuilder.WriteString(extracted)
+		if isDone {
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			if f != nil {
+				f.Flush()
+			}
+			break
+		}
 
-            // Ensure these keys are LOWERCASE to match Python's .get("choices")
-            formatted := map[string]any{
-                "choices": []map[string]any{
-                    {
-                        "delta": map[string]any{
-                            "content": extracted,
-                        },
-                    },
-                },
-            }
+		if extracted != "" {
+			fullResponseBuilder.WriteString(extracted)
 
-            jsonChunk, _ := json.Marshal(formatted)
-            
-            // 📡 Write SSE format
-            fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-            
-            // 🚀 Flush immediately to the terminal
-            if f != nil { f.Flush() }
-        }
-    }
-    }
+			formatted := map[string]any{
+				"choices": []map[string]any{
+					{
+						"delta": map[string]any{
+							"content": extracted,
+						},
+					},
+				},
+			}
 
-    if err := scanner.Err(); err != nil {
-        log.Printf("🚨 Scanner Error: %v", err)
-    }
+			jsonChunk, _ := json.Marshal(formatted)
+			fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
+
+			if f != nil {
+				f.Flush()
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("🚨 Scanner Error: %v", err)
+	}
+	// <--- THIS BRACE CLOSES THE ENTIRE HandleStreamChat FUNCTION
 
 	// --- 💾 6. LEDGER & TELEMETRY ---
 	finalText := fullResponseBuilder.String()
@@ -259,7 +267,9 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 func getStreamAPIKey(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
 	parts := strings.Split(auth, " ")
-	if len(parts) == 2 { return parts[1] }
+	if len(parts) == 2 {
+		return parts[1]
+	}
 	return ""
 }
 
@@ -269,7 +279,9 @@ func streamSimulatedResponse(w http.ResponseWriter, text string) {
 		formatted := map[string]any{"choices": []map[string]any{{"delta": map[string]string{"content": word + " "}}}}
 		jsonChunk, _ := json.Marshal(formatted)
 		fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
-		if f, ok := w.(http.Flusher); ok { f.Flush() }
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
 		time.Sleep(15 * time.Millisecond)
 	}
 	fmt.Fprintf(w, "data: [DONE]\n\n")
