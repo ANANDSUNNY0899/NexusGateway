@@ -145,7 +145,8 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
     modelLower := strings.ToLower(userReq.Model)
 
     switch {
-    case strings.Contains(modelLower, "gemini"):
+    // 🚀 Add 'google' to the Gemini key router
+    case strings.Contains(modelLower, "gemini") || strings.Contains(modelLower, "google"):
         activeKey = cfg.GeminiKey
         if userGeminiKey != "" { activeKey = userGeminiKey }
         

@@ -29,7 +29,8 @@ func GetProvider(model string) AIProvider {
     }
 
     switch {
-    case strings.Contains(m, "gemini"):
+    // 🚀 Add 'google' to the Gemini adapter router
+    case strings.Contains(m, "gemini") || strings.Contains(m, "google"):
         return &GeminiAdapter{}
         
     // 🚨 THE FIX: Catch Groq's R1 Distill BEFORE the official DeepSeek adapter does
