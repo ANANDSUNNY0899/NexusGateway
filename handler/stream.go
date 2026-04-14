@@ -175,21 +175,49 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// --- 🚀 4. EXECUTION & SELF-HEALING ---
-	client := &http.Client{Timeout: 90 * time.Second}
-	resp, err := client.Do(req)
+    client := &http.Client{Timeout: 90 * time.Second}
+    resp, err := client.Do(req)
 
-	if strings.Contains(modelLower, "gemini") && (err != nil || (resp != nil && resp.StatusCode == 404)) {
-		workingModel := DiscoverWorkingModel(activeKey)
-		discoveredModelMap.Store(activeKey, workingModel)
-		req, _ = provider.PrepareRequest(userReq.Messages, workingModel, activeKey, "v1beta")
-		resp, err = client.Do(req)
-	}
+    // Self-Healing for Gemini 404s
+    if strings.Contains(modelLower, "gemini") && (err != nil || (resp != nil && resp.StatusCode == 404)) {
+        workingModel := DiscoverWorkingModel(activeKey)
+        discoveredModelMap.Store(activeKey, workingModel)
+        req, _ = provider.PrepareRequest(userReq.Messages, workingModel, activeKey, "v1beta")
+        resp, err = client.Do(req)
+    }
 
-	if err != nil || (resp != nil && resp.StatusCode != 200) {
-		fmt.Fprintf(w, "data: {\"error\": \"Provider unavailable\"}\n\n")
-		return
-	}
-	defer resp.Body.Close()
+    // 🚨 THE FIX: NEVER SWALLOW UPSTREAM ERRORS
+    if err != nil || (resp != nil && resp.StatusCode != 200) {
+        var errorDetail string
+        if resp != nil {
+            bodyBytes, _ := io.ReadAll(resp.Body) // Import "io" at the top of your file
+            errorDetail = string(bodyBytes)
+        } else {
+            errorDetail = err.Error()
+        }
+
+        // Log it to your Railway console
+        log.Printf("🚨 [UPSTREAM REJECTION] Model: %s | Status: %d | Details: %s", userReq.Model, resp.StatusCode, errorDetail)
+
+        // Format it so the Python SDK prints it as a normal AI message
+        errMsg := fmt.Sprintf("\n🚨 [NEXUS INFRASTRUCTURE ERROR]\nProvider Status: %d\nReason: %s", resp.StatusCode, errorDetail)
+        
+        formatted := map[string]any{
+            "choices": []map[string]any{{
+                "delta": map[string]any{"content": errMsg},
+            }},
+        }
+        jsonChunk, _ := json.Marshal(formatted)
+        
+        fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
+        fmt.Fprintf(w, "data: [DONE]\n\n") // Properly close the stream
+        
+        if f, ok := w.(http.Flusher); ok {
+            f.Flush()
+        }
+        return // Exit before the scanner starts
+    }
+    defer resp.Body.Close()
 
 	// --- 🚀 5. UNIFIED STREAM PARSER ---
 	scanner := bufio.NewScanner(resp.Body)
