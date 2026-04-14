@@ -17,15 +17,26 @@ type GeminiAdapter struct{}
 
 func (g *GeminiAdapter) PrepareRequest(messages []Message, model, key, version string) (*http.Request, error) {
     modelID := strings.TrimPrefix(strings.ToLower(model), "models/")
-    if version == "" { version = "v1" }
+    
+    // 🔥 FIX 1: Use v1beta for better streaming support if not specified
+    if version == "" { version = "v1beta" }
     
     url := fmt.Sprintf("https://generativelanguage.googleapis.com/%s/models/%s:streamGenerateContent?alt=sse&key=%s", version, modelID, key)
     
-    // Map Nexus Messages to Gemini Contents
     var geminiContents []gemini.Content
+    var systemInstruction *gemini.Content
+
     for _, m := range messages {
+        // 🔥 FIX 2: Gemini handles System Prompts in a separate top-level field
+        if m.Role == "system" {
+            systemInstruction = &gemini.Content{
+                Parts: []gemini.Part{{Text: m.Content}},
+            }
+            continue
+        }
+
         role := m.Role
-        if role == "assistant" { role = "model" } // Gemini uses "model" instead of "assistant"
+        if role == "assistant" { role = "model" }
         
         geminiContents = append(geminiContents, gemini.Content{
             Role:  role,
@@ -34,7 +45,8 @@ func (g *GeminiAdapter) PrepareRequest(messages []Message, model, key, version s
     }
 
     payload := gemini.GeminiRequest{
-        Contents: geminiContents,
+        Contents:          geminiContents,
+        SystemInstruction: systemInstruction, // Add this to your GeminiRequest struct
     }
     
     body, _ := json.Marshal(payload)
