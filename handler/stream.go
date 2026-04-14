@@ -140,32 +140,28 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// --- 🚀 3. SOVEREIGN ROUTER ---
-	provider := GetProvider(userReq.Model)
-	var activeKey string
-	modelLower := strings.ToLower(userReq.Model)
+    provider := GetProvider(userReq.Model)
+    var activeKey string
+    modelLower := strings.ToLower(userReq.Model)
 
-	switch {
-	case strings.Contains(modelLower, "deepseek"):
-		activeKey = cfg.DeepSeekKey
-		if userDeepSeekKey != "" {
-			activeKey = userDeepSeekKey
-		}
-	case strings.Contains(modelLower, "gemini"):
-		activeKey = cfg.GeminiKey
-		if userGeminiKey != "" {
-			activeKey = userGeminiKey
-		}
-	case strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral"):
-		activeKey = cfg.GroqKey
-		if userGroqKey != "" {
-			activeKey = userGroqKey
-		}
-	default:
-		activeKey = cfg.OpenAIKey
-		if userOpenAIKey != "" {
-			activeKey = userOpenAIKey
-		}
-	}
+    switch {
+    case strings.Contains(modelLower, "gemini"):
+        activeKey = cfg.GeminiKey
+        if userGeminiKey != "" { activeKey = userGeminiKey }
+        
+    // 🚀 THE FIX: Add deepseek-r1-distill to the Groq routing block!
+    case strings.Contains(modelLower, "llama") || strings.Contains(modelLower, "mixtral") || strings.Contains(modelLower, "deepseek-r1-distill"):
+        activeKey = cfg.GroqKey
+        if userGroqKey != "" { activeKey = userGroqKey }
+        
+    case strings.Contains(modelLower, "deepseek"): // Fallback for official DeepSeek API
+        activeKey = cfg.DeepSeekKey
+        if userDeepSeekKey != "" { activeKey = userDeepSeekKey }
+        
+    default:
+        activeKey = cfg.OpenAIKey
+        if userOpenAIKey != "" { activeKey = userOpenAIKey }
+    }
 
 	
     // PASSING FULL HISTORY TO ADAPTER
