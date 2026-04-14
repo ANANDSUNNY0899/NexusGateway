@@ -168,11 +168,20 @@ func HandleStreamChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// PASSING FULL HISTORY TO ADAPTER
-	req, err := provider.PrepareRequest(userReq.Messages, userReq.Model, activeKey, "v1")
-	if err != nil {
-		log.Printf("❌ [ROUTER ERROR] %v", err)
-		return
-	}
+    req, err := provider.PrepareRequest(userReq.Messages, userReq.Model, activeKey, "v1")
+    if err != nil {
+        log.Printf("❌ [ROUTER ERROR] %v", err)
+        
+        // 🚀 THE FIX: Push the routing error to the Python SDK
+        errMsg := fmt.Sprintf("\n🚨 [NEXUS ROUTER ERROR]\nFailed to prepare request: %v", err)
+        formatted := map[string]any{"choices": []map[string]any{{"delta": map[string]any{"content": errMsg}}}}}
+        jsonChunk, _ := json.Marshal(formatted)
+        
+        fmt.Fprintf(w, "data: %s\n\n", jsonChunk)
+        fmt.Fprintf(w, "data: [DONE]\n\n")
+        if f, ok := w.(http.Flusher); ok { f.Flush() }
+        return
+    }
 
 	// --- 🚀 4. EXECUTION & SELF-HEALING ---
     client := &http.Client{Timeout: 90 * time.Second}
