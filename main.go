@@ -67,6 +67,13 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "public/index.html")
 	})
+	// --- E. SYSTEM DIAGNOSTICS ---
+    http.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        // Simple heartbeat for monitoring services
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"status": "operational", "version": "3.1.5", "shield": "active"}`))
+    })
 
 	// 5. START INFRASTRUCTURE ENGINE
 	log.Printf("---------------------------------------------------------")
