@@ -45,13 +45,19 @@ func (g *GeminiAdapter) PrepareRequest(messages []Message, model, key, version s
 }
 
 func (a *GeminiAdapter) ParseStreamChunk(line string) (string, bool) {
-    // 1. Clean the line
+    // 1. Aggressive Cleaning
     line = strings.TrimSpace(line)
-    if line == "" || line == "[" || line == "]" || line == "," {
+    
+    line = strings.TrimPrefix(line, "[")
+    line = strings.TrimPrefix(line, ",")
+    line = strings.TrimSuffix(line, "]")
+    line = strings.TrimSpace(line)
+
+    if line == "" {
         return "", false
     }
 
-    // 2. Define Gemini's specific JSON Schema
+    // 2. Define Schema (Correct as per your types.go)
     var chunk struct {
         Candidates []struct {
             Content struct {
@@ -62,13 +68,15 @@ func (a *GeminiAdapter) ParseStreamChunk(line string) (string, bool) {
         } `json:"candidates"`
     }
 
-    // 3. Parse the raw JSON
+    // 3. Parse with error logging (Check Railway logs for this!)
     if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+        // log.Printf("Gemini Parse Error: %v | Raw: %s", err, line)
         return "", false
     }
 
-    // 4. Extract the nested text
-    if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Content.Parts) > 0 {
+    // 4. Extraction
+    if len(chunk.Candidates) > 0 && 
+       len(chunk.Candidates[0].Content.Parts) > 0 {
         return chunk.Candidates[0].Content.Parts[0].Text, false
     }
 
