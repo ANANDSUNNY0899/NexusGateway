@@ -7,6 +7,24 @@ import (
 	"net/http"
 )
 
+
+func enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow your local React app
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+
+		// Handle preflight OPTIONS requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	// 1. LOAD INFRASTRUCTURE CONFIG
 	cfg := config.LoadConfig()
@@ -25,6 +43,7 @@ func main() {
 	// 3. MIDDLEWARE WRAPPERS
 	// Full Stack: CORS -> Auth -> RateLimit
 	// Used for inference endpoints to prevent abuse and ensure billing.
+	// Correct Order: CORS -> Auth -> RateLimit
 	inferenceChain := func(h http.HandlerFunc) http.HandlerFunc {
 		return handler.CORSMiddleware(handler.AuthMiddleware(handler.RateLimitMiddleware(h)))
 	}
@@ -82,7 +101,10 @@ func main() {
 	log.Printf("🛡️  SOVEREIGN SHIELD: ACTIVE")
 	log.Printf("---------------------------------------------------------")
 
-	if err := http.ListenAndServe(":"+cfg.Port, nil); err != nil {
-		log.Fatalf("🚨 ENGINE SHUTDOWN: %v", err)
-	}
+	// Create a default serve mux to wrap it
+    server := enableCORS(http.DefaultServeMux)
+
+    if err := http.ListenAndServe(":"+cfg.Port, server); err != nil {
+        log.Fatalf("🚨 ENGINE SHUTDOWN: %v", err)
+    }
 }
