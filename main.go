@@ -95,16 +95,14 @@ func main() {
     })
 
 	// 5. START INFRASTRUCTURE ENGINE
-	log.Printf("---------------------------------------------------------")
-	log.Printf("🚀 NEXUS GATEWAY v3.1 [SOVEREIGN EDITION] BOOT SUCCESS")
-	log.Printf("📡 PORT: %s | ENV: PRODUCTION", cfg.Port)
-	log.Printf("🛡️  SOVEREIGN SHIELD: ACTIVE")
-	log.Printf("---------------------------------------------------------")
+    log.Printf("---------------------------------------------------------")
+    log.Printf("🚀 NEXUS GATEWAY v3.1 [SOVEREIGN EDITION] BOOT SUCCESS")
+    log.Printf("📡 PORT: %s | ENV: PRODUCTION", cfg.Port)
+    log.Printf("🛡️  SOVEREIGN SHIELD: ACTIVE")
+    log.Printf("---------------------------------------------------------")
 
-	// Create a default serve mux to wrap it
-    server := enableCORS(http.DefaultServeMux)
-
-    if err := http.ListenAndServe(":"+cfg.Port, server); err != nil {
+    // We do not need a global CORS wrapper because your Chains already handle it!
+    if err := http.ListenAndServe(":"+cfg.Port, http.DefaultServeMux); err != nil {
         log.Fatalf("🚨 ENGINE SHUTDOWN: %v", err)
     }
 }
